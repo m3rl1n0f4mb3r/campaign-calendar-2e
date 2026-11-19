@@ -1,0 +1,32 @@
+{
+  "name": "campaign-calendar-2e",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "typescript": "5.9.3",
+    "vite": "7.2.4",
+    "vitest": "3.2.4"
+  },
+  "overrides": {
+    "rollup": "4.53.3"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/m3rl1n0f4mb3r/campaign-calendar-2e.git"
+  }
+}
