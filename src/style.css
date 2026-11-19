@@ -44,6 +44,7 @@ p { margin: .35rem 0; }
 .cell.outside { background: #edeee7; color: #606a60; }
 .cell.selected { box-shadow: inset 0 0 0 2px #698871; }
 .cell-heading button { border: 0; padding: .1rem .45rem; background: transparent; }
+.printable-grid .cell-heading button:first-child { flex: none; width: 1.85rem; height: 1.85rem; padding: 0; line-height: 1; }
 .cell-heading button:hover { background: #e0e9dd; }
 .cell-heading .current-day { background: var(--green); color: white; border-radius: 50%; }
 .cell-heading .current-day:hover { background: #254435; }
@@ -88,5 +89,51 @@ dialog:has(.migration-grid) { width: min(900px, 94vw); }
 .migration-grid .event-chip { border-left-style: solid; }
 .migration-grid .migration-affected { background: #fff0cb; }
 .migration-day ul { margin: .25rem 0 0; padding-left: 1.25rem; }
+.print-only { display: none; }
+.moon-toggle { display: inline-flex; align-items: center; gap: .35rem; }
+.calendar-moons, .moon-legend { display: flex; flex-wrap: wrap; gap: .25rem; list-style: none; padding: 0; }
+.calendar-moons { margin: .25rem 0; }
+.cell-heading:has(.calendar-moons) { gap: .2rem; }
+.cell-heading .calendar-moons { flex: 1; min-width: 0; margin: 0; gap: .15rem; }
+.cell-heading:has(.calendar-moons) button { flex: none; padding-inline: .25rem; }
+.moon-legend { gap: .25rem .85rem; margin: 0 0 .65rem; font-size: .85rem; }
+.moon-legend li { display: inline-flex; align-items: center; gap: .3rem; }
+.moon-disc { display: block; width: .85rem; height: .85rem; flex: none; border: 1px solid currentColor; border-radius: 50%; background: var(--moon-fill, transparent); }
+.moon-disc.phase-1 { --moon-fill: radial-gradient(ellipse 76% 50% at 0 50%, transparent 99%, currentColor 100%) right / 50% 100% no-repeat; }
+.moon-disc.phase-2 { --moon-fill: linear-gradient(to left, currentColor 50%, transparent 50%); }
+.moon-disc.phase-3 { --moon-fill: radial-gradient(ellipse 31% 50% at 0 50%, transparent 99%, currentColor 100%); }
+.moon-disc.phase-4 { --moon-fill: currentColor; }
+.moon-disc.phase-5 { --moon-fill: radial-gradient(ellipse 31% 50% at 100% 50%, transparent 99%, currentColor 100%); }
+.moon-disc.phase-6 { --moon-fill: linear-gradient(to right, currentColor 50%, transparent 50%); }
+.moon-disc.phase-7 { --moon-fill: radial-gradient(ellipse 76% 50% at 100% 50%, transparent 99%, currentColor 100%) left / 50% 100% no-repeat; }
+.calendar-grid-header, .calendar-grid-body, .calendar-grid-row { display: contents; }
 @media (max-width: 1150px) { .layout { grid-template-columns: 165px minmax(0, 1fr); } .details { grid-column: 2; } }
 @media (max-width: 700px) { .layout { grid-template-columns: minmax(0, 1fr); gap: .75rem; padding-top: .75rem; } .details { grid-column: 1; } .sidebar { display: grid; grid-template-columns: 1fr 1fr; gap: .3rem; } .sidebar > label, .sidebar > select, .clock-card { grid-column: 1 / -1; } .clock-card { margin-top: .15rem; } .clock-card .sidebar-action { display: inline; width: auto; } .form-row { grid-template-columns: 1fr; } }
+
+@media print {
+  @page { size: landscape; margin: 12mm; }
+  :root, body { background: white; color: black; min-width: 0; }
+  .masthead, .sidebar, .details, .toolbar, .calendar-actions, .cell-add, .global-error, dialog { display: none !important; }
+  .print-only { display: block; }
+  .layout { display: block; max-width: none; padding: 0; }
+  .heading { break-after: avoid; margin-bottom: 3mm; }
+  .heading h1 { font-size: 20pt; }
+  .grid-scroll { overflow: visible; border: 0; border-radius: 0; }
+  .printable-grid { display: table; width: 100%; table-layout: fixed; border-collapse: collapse; }
+  .calendar-grid-header { display: table-header-group; }
+  .calendar-grid-body { display: table-row-group; }
+  .calendar-grid-row { display: table-row; break-inside: avoid; }
+  .printable-grid :is(.weekday, .cell) { display: table-cell; vertical-align: top; height: auto; border: 1px solid #888; padding: 1mm; background: white; }
+  .printable-grid .cell { height: 26mm; }
+  .printable-grid .weekday { white-space: normal; overflow-wrap: anywhere; }
+  .cell.selected { box-shadow: none; }
+  .cell-heading .current-day { color: black; background: transparent; font-weight: bold; }
+  .moon-disc { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  .cell-heading .moon-disc { width: 8pt; height: 8pt; }
+  .moon-legend { break-after: avoid; font-size: 8pt; }
+  .event-chip { font-size: 8pt; }
+  .event-chip span { white-space: normal; overflow-wrap: anywhere; }
+  .agenda { padding: 0; border: 0; min-height: 0; }
+  .agenda-row, .event-item { break-inside: avoid; }
+  .event-chip, .event-item { background: white; }
+}

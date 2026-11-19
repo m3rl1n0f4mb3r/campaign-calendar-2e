@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { dateIndex, dateParts, moonPhase, phaseNames, template, weekday, yearLabel, yearLength } from './calendar'
+import { dateIndex, dateParts, moonColor, moonPhase, phaseNames, template, weekday, yearLabel, yearLength } from './calendar'
 import { changeSeries, minutes, occurrences, type Series } from './events'
 import { migrate } from './migration'
 import { dragonlance, greyhawk } from './presets'
@@ -93,6 +93,15 @@ describe('events', () => {
 })
 
 describe('migration and storage', () => {
+  it('round-trips a custom moon color and supplies a default for an older moon record', () => {
+    const { calendar, current } = dragonlance()
+    const older = parseCampaignBackup(exportCampaign(newCampaign('Krynn', calendar, current)))
+    expect(moonColor(older.calendar.moons[0], 0)).toBe('#697681')
+    older.calendar.moons[0].color = '#845a30'
+    const restored = parseCampaignBackup(exportCampaign(older))
+    expect(moonColor(restored.calendar.moons[0], 0)).toBe('#845a30')
+  })
+
   it('exports one campaign and restores into the active slot even when the source ID belongs to another campaign', () => {
     const target = newCampaign('Target')
     const source = newCampaign('Source', greyhawk(), 12)

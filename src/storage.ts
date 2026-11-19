@@ -5,14 +5,15 @@ import type { Series } from './events'
 const coordinate = z.number().int().min(-10_000_000_000).max(10_000_000_000)
 const positive = z.number().int().min(1).max(10000)
 const name = z.string().trim().min(1).max(120)
+const hexColor = z.string().regex(/^#[\da-f]{6}$/i)
 const calendar = z.object({
   periods: z.array(z.object({ id: name, name, days: positive.max(366), festival: z.boolean() })).min(1).max(60),
   weekdays: z.array(name).min(1).max(30),
   before: z.string(), after: z.string(), skipZero: z.boolean(),
-  moons: z.array(z.object({ name, cycle: z.number().finite().positive().max(100000), anchor: coordinate, phase: z.number().int().min(0).max(7), source: z.string() })).max(30),
+  moons: z.array(z.object({ name, cycle: z.number().finite().positive().max(100000), anchor: coordinate, phase: z.number().int().min(0).max(7), source: z.string(), color: hexColor.optional() })).max(30),
 }).refine(value => value.periods.some(p => !p.festival) && new Set(value.periods.map(p => p.id)).size === value.periods.length, 'Calendar needs a month and unique period IDs')
 const eventData = z.object({
-  title: name, location: z.string(), notes: z.string(), color: z.string().regex(/^#[\da-f]{6}$/i),
+  title: name, location: z.string(), notes: z.string(), color: hexColor,
   start: coordinate, end: coordinate, allDay: z.boolean(),
 })
 const validRange = (event: z.infer<typeof eventData>) => event.end > event.start && (!event.allDay || (event.start % 1440 === 0 && event.end % 1440 === 0))

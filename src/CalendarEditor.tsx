@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { phaseNames, type Calendar } from './calendar'
+import { moonColor, phaseNames, type Calendar } from './calendar'
 import { migrate } from './migration'
 import { DateField } from './DateField'
 import { MigrationCalendar } from './MigrationCalendar'
@@ -54,6 +54,7 @@ export function CalendarEditor({ campaign, save, backup, close }: { campaign: Ca
         <div className="form-row"><label>Name<input required maxLength={120} value={moon.name} onChange={e => updateMoon(i, { name: e.target.value })}/></label><label>Cycle in days<input type="number" min="0.001" max="100000" step="any" required value={moon.cycle || ''} onChange={e => updateMoon(i, { cycle: +e.target.value, source: 'GM-supplied configuration' })}/></label></div>
         <DateField calendar={campaign.calendar} label="Anchor date" value={moon.anchor} onChange={anchor => updateMoon(i, { anchor, source: 'GM-supplied anchor' })}/>
         <label>Phase on anchor date<select value={moon.phase} onChange={e => updateMoon(i, { phase: +e.target.value, source: 'GM-supplied anchor' })}>{phaseNames.map((name, phase) => <option key={phase} value={phase}>{name}</option>)}</select></label>
+        <label>Calendar color<input type="color" aria-label={`Calendar color for ${moon.name}`} value={moonColor(moon, i)} onChange={e => updateMoon(i, { color: e.target.value })}/></label>
         <p className="muted">{moon.source}</p>
         <button type="button" onClick={() => setDraft({ ...draft, moons: draft.moons.filter((_, index) => index !== i) })}>Remove moon</button>
       </div>)}
