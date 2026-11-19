@@ -1,6 +1,7 @@
 import { dateIndex, dateLabel, dateParts, moonPhase, mod, phaseNames, weekday, type Calendar } from './calendar'
 import { dayOf, hasOccurrence, minutes, occurrences, type EventData } from './events'
 import type { Campaign } from './storage'
+import { closingDay, dueMonth, validHoldings, type TurnMonth } from './domain'
 
 export function migrate(campaign: Campaign, next: Calendar) {
   const old = campaign.calendar
@@ -51,6 +52,28 @@ export function migrate(campaign: Campaign, next: Calendar) {
     const previous = old.moons.find(item => item.name === moon.name)
     const after = phaseNames[moonPhase(moon, current)]
     changes.push(`${moon.name} at the campaign date: ${previous ? phaseNames[moonPhase(previous, campaign.current)] + ' → ' : ''}${after}`)
+  }
+  const holdings = campaign.holdings ?? []
+  for (const holding of holdings) {
+    function compareMonth(label: string, before: TurnMonth, after = before) {
+      const start = closingDay(old, before)
+      try {
+        const end = closingDay(next, after)
+        if (start !== end || dateLabel(old, start) !== dateLabel(next, end) || old.weekdays[weekday(old, start)] !== next.weekdays[weekday(next, end)]) {
+          changes.push(`${holding.name} ${label}: ${dateLabel(old, start)} → ${dateLabel(next, end)}`)
+          affected.push({ before: start, after: end })
+        }
+      } catch {
+        errors.push(`${holding.name} ${label} uses a removed month or a period changed to a festival.`)
+      }
+    }
+    for (const turn of holding.turns) compareMonth('recorded turn', turn.month)
+    for (const draft of holding.replay) compareMonth('reopened turn', draft.month)
+    if (validHoldings(next, [holding])) {
+      compareMonth('next turn', dueMonth(old, holding), dueMonth(next, holding))
+    } else {
+      errors.push(`${holding.name} would have an invalid first month, or reordered domain turns.`)
+    }
   }
   if (!errors.length && events.some(event => event.rule)) {
     const before = occurrences(old, campaign.events.filter(event => event.rule), campaign.current, campaign.current + 30)

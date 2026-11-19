@@ -52,13 +52,14 @@ export const replayInputs = (holding: Holding, month: TurnMonth) =>
 
 export function previewTurn(holding: Holding, month: TurnMonth, values: TurnInputs): Receipt {
   const draft = inputs.parse(values)
+  draft.resources = draft.resources.map(item => ({ ...item, rate: item.rate ?? resourceRates[item.type] }))
   const opening = holding.turns.at(-1)?.closing ?? holding.opening
   const tax = draft.families * draft.tax
   const services = draft.families * draft.services
   const production = draft.resources.map(item => ({
     name: item.name, balance: 'noncash' as const, amount: draft.families * (item.rate ?? resourceRates[item.type]),
   }))
-  const total = draft.override ?? production.reduce((sum, item) => sum + item.amount, 0)
+  const total = draft.override ?? production.reduce((sum, item) => money.parse(sum + item.amount), 0)
   if (draft.realized > total) throw new Error('Resource cash realization exceeds resource production.')
   const lines: LedgerLine[] = [
     { name: 'Cash taxes', balance: 'cash', amount: tax },
@@ -71,7 +72,7 @@ export function previewTurn(holding: Holding, month: TurnMonth, values: TurnInpu
   )
   lines.push(...draft.adjustments)
   const closing = { ...opening }
-  for (const item of lines) closing[item.balance] += item.amount
+  for (const item of lines) closing[item.balance] = amount.parse(closing[item.balance] + amount.parse(item.amount))
   for (const balance of ['cash', 'noncash'] as const) {
     if (closing[balance] < 0) throw new Error(`The ${balance} balance is short by ${formatGp(-closing[balance])}.`)
   }

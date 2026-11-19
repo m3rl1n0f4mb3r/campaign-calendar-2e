@@ -18,10 +18,10 @@ type Screen =
   | { type: 'receipt'; link: ReceiptLink }
   | { type: 'reopen'; link: ReceiptLink; revision: Props['revision'] }
 
-function Money({ label, value, change, signed = false, optional = false }: {
-  label: string; value?: number; change: (value?: number) => void; signed?: boolean; optional?: boolean
+function Money({ label, value, change, optional = false }: {
+  label: string; value?: number; change: (value?: number) => void; optional?: boolean
 }) {
-  return <label>{label}<input type="number" step=".01" min={signed ? undefined : 0} required={!optional}
+  return <label>{label}<input type="number" step=".01" min="0" required={!optional}
     value={value === undefined ? '' : value / 100} onChange={event => change(event.target.value === '' ? undefined : Math.round(event.target.valueAsNumber * 100))}/></label>
 }
 
@@ -122,7 +122,7 @@ export function DomainPanel({ campaign, revision, receipt, save, backup }: Props
               e.target.setCustomValidity(calendar.skipZero && value === 0 ? 'This calendar skips year zero.' : '')
               if (Number.isInteger(value) && !(calendar.skipZero && value === 0)) change({ first: { ...draft.first, year: value - Number(calendar.skipZero && value > 0) } })
             }}/></label>
-        </div></fieldset>
+        </div><p className="muted">The preview uses a full month. Enter a ledger adjustment for a partial month.</p></fieldset>
         <div className="form-row">
           <Money label="Opening cash (gp)" value={draft.opening.cash} change={cash => change({ opening: { ...draft.opening, cash: cash ?? 0 } })}/>
           <Money label="Opening noncash value (gp)" value={draft.opening.noncash} change={noncash => change({ opening: { ...draft.opening, noncash: noncash ?? 0 } })}/>
@@ -144,7 +144,7 @@ export function DomainPanel({ campaign, revision, receipt, save, backup }: Props
       catch (cause) { invalid = cause instanceof Error && cause.name !== 'ZodError' ? cause.message : 'Complete all required ledger fields with valid amounts.' }
     }
     const addLine = (name: string, balance: LedgerLine['balance']) =>
-      change({ adjustments: [...draft.adjustments, { name, balance, amount: 0 }] })
+      change({ adjustments: [...draft.adjustments, { name, balance, amount: -0 }] })
     return <form className="form" onSubmit={e => {
       e.preventDefault()
       if (!result || stale || pending) return
@@ -153,7 +153,7 @@ export function DomainPanel({ campaign, revision, receipt, save, backup }: Props
         void persist(updated, { type: 'receipt', link: { holdingId: holding.id, month } })
       } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not record the turn.') }
     }}>
-      <h3>{holding.name} · {date(month)}</h3>
+      <h3>{holding.name}{!stale && ` · ${date(month)}`}</h3>
       {stale ? <div className="warning" role="alert">This preview is stale. Refresh to use the latest ledger and campaign date.</div> : <>
         <button type="button" onClick={() => setScreen({ ...screen, draft: holdingDefaults(holding) })}>Reset to current defaults</button>
         <Rates values={draft} change={change}/>
@@ -162,12 +162,15 @@ export function DomainPanel({ campaign, revision, receipt, save, backup }: Props
           <Money label="Resource value realized in cash (gp)" value={draft.realized} change={realized => change({ realized: realized ?? 0 })}/>
         </div>
         <fieldset><legend>Expenses and adjustments</legend>
+          {holding.liege && <p className="muted">Rules Cyclopedia reference: 20% liege payment and 10% recommended tithe. Enter the amount and balance to use.</p>}
           {draft.adjustments.map((line, index) => {
             const update = (patch: Partial<LedgerLine>) => change({ adjustments: draft.adjustments.map((item, i) => i === index ? { ...item, ...patch } : item) })
+            const debit = line.amount < 0 || Object.is(line.amount, -0)
             return <div className="domain-fields domain-line" key={index}>
               <label>Entry<input required maxLength={120} value={line.name} onChange={e => update({ name: e.target.value })}/></label>
               <label>Balance<select value={line.balance} onChange={e => update({ balance: e.target.value as LedgerLine['balance'] })}><option value="cash">Cash</option><option value="noncash">Noncash</option></select></label>
-              <Money label="Amount (gp, negative for debits)" signed value={line.amount} change={amount => update({ amount: amount ?? 0 })}/>
+              <label>Direction<select value={debit ? 'debit' : 'credit'} onChange={e => update({ amount: Math.abs(line.amount) * (e.target.value === 'debit' ? -1 : 1) })}><option value="debit">Debit</option><option value="credit">Credit</option></select></label>
+              <Money label="Amount (gp)" value={Math.abs(line.amount)} change={amount => update({ amount: (amount ?? 0) * (debit ? -1 : 1) })}/>
               <button type="button" onClick={() => change({ adjustments: draft.adjustments.filter((_, i) => i !== index) })}>Remove entry</button>
             </div>
           })}
@@ -230,5 +233,8 @@ export function DomainPanel({ campaign, revision, receipt, save, backup }: Props
         </details>}
       </section>
     })}
+    <details><summary>Rules used for monthly turns</summary>
+      <p>Holding and feudal context follow <cite>The Castle Guide</cite>. Monthly income and expenses use the <cite>Rules Cyclopedia</cite>, chapter 12. Resource income uses the <cite>Companion Rules</cite>, Book Two, page 5.</p>
+    </details>
   </div>
 }

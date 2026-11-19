@@ -67,7 +67,7 @@ export function saveStore(storage: Storage, store: Store) {
   storage.setItem(key, JSON.stringify(storeSchema.parse(store)))
 }
 
-export function saveIfCurrent(storage: Storage, expected: string | null, next: Store) {
+export function saveIfCurrent(storage: Pick<Storage, 'getItem' | 'setItem'>, expected: string | null, next: Store) {
   const current = storage.getItem(key)
   if (current !== expected) return { saved: false as const, raw: current }
   const raw = JSON.stringify(storeSchema.parse(next))
