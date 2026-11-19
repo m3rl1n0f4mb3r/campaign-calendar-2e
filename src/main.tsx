@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
+import { inject } from '@vercel/analytics'
 import { dateIndex, dateLabel, dateParts, mod, moonPhase, movePeriod, phaseNames, phaseSymbols, weekday, yearLabel } from './calendar'
 import { changeSeries, minutes, occurrences, type EventData, type Occurrence, type Rule } from './events'
 import { exportCampaign, key, newCampaign, parseCampaignBackup, parseStore, restoreActiveCampaign, saveStore, type Campaign, type Store } from './storage'
@@ -230,6 +231,14 @@ function App() {
       </form>}
     </Dialog>}
   </>
+}
+
+if (import.meta.env.VITE_VERCEL_ENV === 'production') {
+  inject({ beforeSend: event => {
+    if (event.type !== 'pageview') return null
+    // This app has one route. Report its origin without URL parameters or fragments.
+    return { ...event, url: new URL('/', window.location.origin).href }
+  } })
 }
 
 createRoot(document.getElementById('root')!).render(<App/>)
