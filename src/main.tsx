@@ -7,11 +7,13 @@ import { exportCampaign, key, newCampaign, parseCampaignBackup, parseStore, rest
 import { dragonlance, greyhawk, lanceSource } from './presets'
 import { DateField } from './DateField'
 import { EventEditor, type Scope } from './EventEditor'
+import { DomainPanel, type ReceiptLink } from './DomainPanel'
+import { turnEntries } from './domain'
 import { CalendarEditor } from './CalendarEditor'
 import './style.css'
 
 type View = 'Month' | 'Week' | 'Day' | 'Agenda'
-type Panel = 'new' | 'calendar' | 'event' | 'jump' | 'clock' | 'data' | 'search'
+type Panel = 'new' | 'calendar' | 'event' | 'jump' | 'clock' | 'data' | 'search' | 'domains'
 const views: View[] = ['Month', 'Week', 'Day', 'Agenda']
 
 function initialize() {
@@ -47,6 +49,7 @@ function App() {
   const [view, setView] = useState<View>('Month')
   const [showMoons, setShowMoons] = useState(false)
   const [panel, setPanel] = useState<Panel>()
+  const [receipt, setReceipt] = useState<ReceiptLink>()
   const [editing, setEditing] = useState<Occurrence>()
   const [draftDate, setDraftDate] = useState(selected)
   const [query, setQuery] = useState('')
@@ -57,7 +60,7 @@ function App() {
   const restoreRequest = useRef(0)
   const [preset, setPreset] = useState('generic')
   const [campaignName, setCampaignName] = useState('')
-  const dialogTitle = { new: 'New campaign', calendar: 'Calendar settings', event: editing ? 'Edit event' : 'New event', jump: 'Jump to date', clock: 'Set campaign date', data: 'Campaign data', search: 'Search events' }
+  const dialogTitle = { new: 'New campaign', calendar: 'Calendar settings', event: editing ? 'Edit event' : 'New event', jump: 'Jump to date', clock: 'Set campaign date', data: 'Campaign data', search: 'Search events', domains: 'Domain Play' }
 
   function syncSaved(value: string | null) {
     setRaw(value)
@@ -87,7 +90,7 @@ function App() {
       const value = localStorage.getItem(key)
       if (value === raw) return
       syncSaved(value)
-      if (panel) close()
+      if (panel && panel !== 'domains') close()
       setError('Campaign data changed in another tab. Review the latest data before saving.')
     }
     window.addEventListener('storage', onStorage)
@@ -105,7 +108,7 @@ function App() {
       const result = navigator.locks ? await navigator.locks.request(key, write) : write()
       if (!result.saved) {
         syncSaved(result.raw)
-        close()
+        if (panel !== 'domains') close()
         setError('Campaign data changed in another tab. Review the latest data before saving.')
         return false
       }
@@ -125,6 +128,7 @@ function App() {
   function open(next: Panel) {
     setPanel(next)
     setDraftDate(next === 'clock' ? campaign.current : selected)
+    if (next === 'domains') setReceipt(undefined)
     if (next === 'new') { setCampaignName(''); setPreset('generic') }
     if (next === 'search') { setSearchFrom(selected); setSearchTo(selected + 29) }
   }
@@ -172,6 +176,25 @@ function App() {
     <span>{!event.allDay && compact && <small>{timeLabel(event)} </small>}{event.title}</span>
     {!compact && <small>{timeLabel(event)}{event.location && ` · ${event.location}`}</small>}
   </button>
+  function calendarEntries(events: Occurrence[], start: number, end: number, term?: string) {
+    const entries = events.map(event => ({
+      key: `${event.series.id}:${event.original}`, start: event.start, end: event.end,
+      render: (day: number, compact = false) => eventButton(event, day, compact),
+    }))
+    for (const entry of turnEntries(cal, campaign.holdings ?? [], start, end, term)) {
+      const entryKey = `turn:${entry.holdingId}:${entry.month.year}:${entry.month.period}`
+      entries.push({
+        key: entryKey, start: entry.day * minutes, end: (entry.day + 1) * minutes,
+        render: (_, compact = false) => <button key={entryKey} className={compact ? 'event-chip domain-event' : 'event-item domain-event'} onClick={() => {
+          setReceipt(entry)
+          setPanel('domains')
+        }}><span>{entry.title}</span></button>,
+      })
+    }
+    return entries.sort((a, b) => a.start - b.start)
+  }
+  const entries = calendarEntries(list, from, to, search?.query)
+  const selectedEntries = calendarEntries(selectedEvents, selected, selected + 1)
   const moonList = (day: number) => <ul className="calendar-moons" aria-label="Moon phases">{cal.moons.map((moon, index) => {
     const phase = moonPhase(moon, day)
     const label = `${moon.name}: ${phaseNames[phase]}`
@@ -186,7 +209,7 @@ function App() {
         {showCalendarMoons && moonList(day)}
         <button className="cell-add" aria-label={`Add event on ${dateLabel(cal, day)}`} onClick={() => openEvent(undefined, day)}>+</button>
       </div>
-      {list.filter(event => event.start < (day + 1) * minutes && event.end > day * minutes).map(event => eventButton(event, day, true))}
+      {entries.filter(entry => entry.start < (day + 1) * minutes && entry.end > day * minutes).map(entry => entry.render(day, true))}
     </div>
   }
 
@@ -205,6 +228,7 @@ function App() {
         }}>{store.campaigns.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
         <button className="sidebar-action" onClick={() => open('new')}>＋ New campaign</button>
         <button className="sidebar-action" onClick={() => open('calendar')}>Calendar settings</button>
+        <button className="sidebar-action" onClick={() => open('domains')}>Domain Play</button>
         <section className="clock-card">
           <h2>Campaign date</h2><p>{dateLabel(cal, campaign.current)}</p>
           <button className="sidebar-action" onClick={() => open('clock')}>Set date</button>
@@ -238,10 +262,10 @@ function App() {
         </div></div> : <div className="agenda">
           {view === 'Day' && !search && <h2>{cal.weekdays[weekday(cal, selected)]}, {dateLabel(cal, selected)}</h2>}
           {view === 'Day' && !search && showCalendarMoons && moonList(selected)}
-          {list.length ? list.map(event => {
-            const day = Math.floor(event.start / minutes)
-            return <div className="agenda-row" key={`${event.series.id}:${event.original}`}>
-              <div><time>{dateLabel(cal, day)}</time>{(search || view === 'Agenda') && showCalendarMoons && moonList(day)}</div>{eventButton(event, day)}
+          {entries.length ? entries.map(entry => {
+            const day = Math.floor(entry.start / minutes)
+            return <div className="agenda-row" key={entry.key}>
+              <div><time>{dateLabel(cal, day)}</time>{(search || view === 'Agenda') && showCalendarMoons && moonList(day)}</div>{entry.render(day)}
             </div>
           }) : <p className="muted">No events in this date range.</p>}
         </div>}
@@ -252,11 +276,12 @@ function App() {
           const phase = moonPhase(moon, selected)
           return <div className="moon" key={index}><span aria-hidden="true" style={{ color: moonColor(moon, index) }}>{phaseSymbols[phase]}</span><div><strong>{moon.name}</strong><small>{phaseNames[phase]}</small></div></div>
         })}</section>}
-        <section><h3>Events</h3>{selectedEvents.length ? selectedEvents.map(event => eventButton(event, selected)) : <p className="muted">No events on this date.</p>}</section>
+        <section><h3>Events</h3>{selectedEntries.length ? selectedEntries.map(entry => entry.render(selected)) : <p className="muted">No events on this date.</p>}</section>
       </aside>
     </main>
     {panel && <Dialog key={panel} title={dialogTitle[panel]} close={close}>
       {error && <p role="alert" className="error">{error}</p>}
+      {panel === 'domains' && <DomainPanel campaign={campaign} revision={raw} receipt={receipt} backup={backup} save={holdings => saveCampaign({ ...campaign, holdings })}/>}
       {panel === 'event' && <EventEditor calendar={cal} day={selected} event={editing} save={saveEvent} close={close}/>}
       {panel === 'calendar' && <CalendarEditor campaign={campaign} close={close} backup={backup} save={async next => {
         if (await saveCampaign(next)) { setSelected(next.current); setSearch(undefined); close() }

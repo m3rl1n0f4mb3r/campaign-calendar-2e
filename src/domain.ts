@@ -114,3 +114,13 @@ export function validHoldings(cal: Calendar, holdings: Holding[]) {
     })
   } catch { return false }
 }
+
+export function turnEntries(cal: Calendar, holdings: Holding[], from: number, to: number, query = '') {
+  const needle = query.trim().toLowerCase()
+  return holdings.flatMap(holding => holding.turns.flatMap(turn => {
+    const day = closingDay(cal, turn.month)
+    const title = `${turn.name} · Domain turn`
+    if (day < from || day >= to || ![title, turn.ruler, turn.liege, turn.inputs.notes].some(text => text.toLowerCase().includes(needle))) return []
+    return [{ day, title, holdingId: holding.id, month: turn.month }]
+  }))
+}
