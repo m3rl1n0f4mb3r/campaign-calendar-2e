@@ -1,5 +1,5 @@
 export type Period = { id: string; name: string; days: number; festival: boolean }
-export type Moon = { name: string; cycle: number; anchor: number; phase: number; source: string }
+export type Moon = { name: string; cycle: number; anchor: number; phase: number; source: string; color?: string }
 export type Calendar = { periods: Period[]; weekdays: string[]; before: string; after: string; skipZero: boolean; moons: Moon[] }
 export type DateParts = { year: number; period: string; day: number }
 
@@ -51,6 +51,8 @@ export function movePeriod(cal: Calendar, index: number, amount: number, monthsO
 }
 
 export const phaseNames = ['New moon', 'Waxing crescent', 'First quarter', 'Waxing gibbous', 'Full moon', 'Waning gibbous', 'Last quarter', 'Waning crescent']
+const moonColors = ['#697681', '#a13442', '#634783', '#315d9b', '#27705d', '#8d591b']
+export const moonColor = (moon: Moon, index: number) => moon.color ?? moonColors[index % moonColors.length]
 export const phaseSymbols = ['●', '◔', '◑', '◕', '○', '◕', '◐', '◔']
 export const moonPhase = (moon: Moon, day: number) => mod(Math.round((day - moon.anchor) * 8 / moon.cycle + moon.phase), 8)
 

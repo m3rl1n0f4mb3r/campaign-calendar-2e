@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { inject } from '@vercel/analytics'
-import { dateIndex, dateLabel, dateParts, mod, moonPhase, movePeriod, phaseNames, phaseSymbols, weekday, yearLabel } from './calendar'
+import { dateIndex, dateLabel, dateParts, mod, moonColor, moonPhase, movePeriod, phaseNames, phaseSymbols, weekday, yearLabel } from './calendar'
 import { changeSeries, minutes, occurrences, type EventData, type Occurrence, type Rule } from './events'
 import { exportCampaign, key, newCampaign, parseCampaignBackup, parseStore, restoreActiveCampaign, saveStore, type Campaign, type Store } from './storage'
 import { dragonlance, greyhawk, lanceSource } from './presets'
@@ -43,6 +43,7 @@ function App() {
   const cal = campaign.calendar
   const [selected, setSelected] = useState(campaign.current)
   const [view, setView] = useState<View>('Month')
+  const [showMoons, setShowMoons] = useState(false)
   const [panel, setPanel] = useState<Panel>()
   const [editing, setEditing] = useState<Occurrence>()
   const [draftDate, setDraftDate] = useState(selected)
@@ -110,6 +111,10 @@ function App() {
   const from = search?.from ?? (view === 'Month' ? monthStart : view === 'Week' ? weekStart : selected)
   const to = search ? search.to + 1 : view === 'Month' ? monthEnd : view === 'Week' ? weekStart + weekLength : selected + (view === 'Agenda' ? 30 : 1)
   const weekGrid = !search && (view === 'Month' || view === 'Week')
+  const showCalendarMoons = showMoons && cal.moons.length > 0
+  const printRange = view === 'Month' && !search ? '' : from + 1 === to
+    ? dateLabel(cal, from)
+    : `${dateLabel(cal, from)} – ${dateLabel(cal, to - 1)}`
   const list = occurrences(cal, campaign.events, from, to, search?.query)
   const selectedEvents = occurrences(cal, campaign.events, selected, selected + 1)
   const navigate = (direction: number) => setSelected(view === 'Month' ? movePeriod(cal, selected, direction) : selected + direction * (view === 'Week' ? weekLength : view === 'Agenda' ? 30 : 1))
@@ -118,6 +123,23 @@ function App() {
     <span>{!event.allDay && compact && <small>{timeLabel(event)} </small>}{event.title}</span>
     {!compact && <small>{timeLabel(event)}{event.location && ` · ${event.location}`}</small>}
   </button>
+  const moonList = (day: number) => <ul className="calendar-moons" aria-label="Moon phases">{cal.moons.map((moon, index) => {
+    const phase = moonPhase(moon, day)
+    const label = `${moon.name}: ${phaseNames[phase]}`
+    return <li key={index}><span className={`moon-disc phase-${phase}`} style={{ color: moonColor(moon, index) }} role="img" aria-label={label} title={label}/></li>
+  })}</ul>
+
+  function calendarCell(day: number) {
+    const parts = dateParts(cal, day)
+    const outside = view === 'Month' && (day < first || day >= first + period.days)
+    return <div key={day} className={`cell${outside ? ' outside' : ''}${day === selected ? ' selected' : ''}`}>
+      <div className="cell-heading"><button className={day === campaign.current ? 'current-day' : ''} aria-pressed={day === selected} aria-label={dateLabel(cal, day)} onClick={() => setSelected(day)}>{parts.day}</button>
+        {showCalendarMoons && moonList(day)}
+        <button className="cell-add" aria-label={`Add event on ${dateLabel(cal, day)}`} onClick={() => openEvent(undefined, day)}>+</button>
+      </div>
+      {list.filter(event => event.start < (day + 1) * minutes && event.end > day * minutes).map(event => eventButton(event, day, true))}
+    </div>
+  }
 
   return <>
     <header className="masthead">
@@ -142,39 +164,44 @@ function App() {
       </aside>
       <section className="workspace">
         <div className="heading">
-          <div><p className="campaign-name">{campaign.name}</p><h1>{search ? 'Search results' : `${period.name} · ${yearLabel(cal, date.year)}`}</h1></div>
-          <button className="primary" onClick={() => openEvent()}>＋ New event</button>
+          <div><p className="campaign-name">{campaign.name}</p><h1>{search ? 'Search results' : `${period.name} · ${yearLabel(cal, date.year)}`}</h1>
+            {printRange && <p className="print-only">{printRange}</p>}
+          </div>
+          <div className="button-group calendar-actions"><button onClick={() => window.print()}>Print</button><button className="primary" onClick={() => openEvent()}>＋ New event</button></div>
         </div>
         <div className="toolbar">
           {search ? <><span>{search.query || 'All events'} · {dateLabel(cal, search.from)} – {dateLabel(cal, search.to)}</span><button onClick={() => setSearch(undefined)}>Back to calendar</button></> : <>
             <div className="button-group"><button aria-label="Previous period" onClick={() => navigate(-1)}>‹</button><button aria-label="Next period" onClick={() => navigate(1)}>›</button><button onClick={() => setSelected(campaign.current)}>Campaign date</button><button onClick={() => open('jump')}>Jump</button></div>
             <div className="button-group view-tabs" aria-label="Calendar view">{views.map(item => <button key={item} aria-pressed={view === item} onClick={() => setView(item)}>{item}</button>)}</div>
           </>}
+          {cal.moons.length > 0 && <label className="moon-toggle"><input type="checkbox" checked={showMoons} onChange={event => setShowMoons(event.target.checked)}/> Show moons</label>}
         </div>
-        {weekGrid ? <div className="grid-scroll"><div className="calendar-grid" style={{ gridTemplateColumns: `repeat(${weekLength}, minmax(84px, 1fr))` }}>
-          {cal.weekdays.map((name, i) => <div className="weekday" key={i}>{name}</div>)}
-          {Array.from({ length: to - from }, (_, i) => {
-            const day = from + i
-            const parts = dateParts(cal, day)
-            const outside = view === 'Month' && parts.period !== date.period
-            return <div key={day} className={`cell${outside ? ' outside' : ''}${day === selected ? ' selected' : ''}`}>
-              <div className="cell-heading"><button className={day === campaign.current ? 'current-day' : ''} aria-pressed={day === selected} aria-label={dateLabel(cal, day)} onClick={() => setSelected(day)}>{parts.day}</button>
-              <button className="cell-add" aria-label={`Add event on ${dateLabel(cal, day)}`} onClick={() => openEvent(undefined, day)}>+</button></div>
-              {list.filter(event => event.start < (day + 1) * minutes && event.end > day * minutes).map(event => eventButton(event, day, true))}
+        {showCalendarMoons && <ul className="moon-legend" aria-label="Moons in display order">{cal.moons.map((moon, index) =>
+          <li key={index}><span className="moon-disc phase-4" style={{ color: moonColor(moon, index) }} aria-hidden="true"/>{moon.name}</li>
+        )}</ul>}
+        {weekGrid ? <div className="grid-scroll"><div className="calendar-grid printable-grid" style={{ gridTemplateColumns: `repeat(${weekLength}, minmax(${showCalendarMoons ? '112px' : '84px'}, 1fr))` }}>
+          <div className="calendar-grid-header"><div className="calendar-grid-row">{cal.weekdays.map((name, i) => <div className="weekday" key={i}>{name}</div>)}</div></div>
+          <div className="calendar-grid-body">{Array.from({ length: (to - from) / weekLength }, (_, row) =>
+            <div className="calendar-grid-row" key={from + row * weekLength}>
+              {Array.from({ length: weekLength }, (_, column) => calendarCell(from + row * weekLength + column))}
             </div>
-          })}
+          )}</div>
         </div></div> : <div className="agenda">
           {view === 'Day' && !search && <h2>{cal.weekdays[weekday(cal, selected)]}, {dateLabel(cal, selected)}</h2>}
-          {list.length ? list.map(event => <div className="agenda-row" key={`${event.series.id}:${event.original}`}>
-            <time>{dateLabel(cal, Math.floor(event.start / minutes))}</time>{eventButton(event, Math.floor(event.start / minutes))}
-          </div>) : <p className="muted">No events in this date range.</p>}
+          {view === 'Day' && !search && showCalendarMoons && moonList(selected)}
+          {list.length ? list.map(event => {
+            const day = Math.floor(event.start / minutes)
+            return <div className="agenda-row" key={`${event.series.id}:${event.original}`}>
+              <div><time>{dateLabel(cal, day)}</time>{(search || view === 'Agenda') && showCalendarMoons && moonList(day)}</div>{eventButton(event, day)}
+            </div>
+          }) : <p className="muted">No events in this date range.</p>}
         </div>}
       </section>
       <aside className="details">
         <h2>{dateLabel(cal, selected)}</h2><p className="muted">{cal.weekdays[weekday(cal, selected)]}</p>
         {cal.moons.length > 0 && <section><h3>Moon phases</h3>{cal.moons.map((moon, index) => {
           const phase = moonPhase(moon, selected)
-          return <div className="moon" key={index}><span aria-hidden="true">{phaseSymbols[phase]}</span><div><strong>{moon.name}</strong><small>{phaseNames[phase]}</small></div></div>
+          return <div className="moon" key={index}><span aria-hidden="true" style={{ color: moonColor(moon, index) }}>{phaseSymbols[phase]}</span><div><strong>{moon.name}</strong><small>{phaseNames[phase]}</small></div></div>
         })}</section>}
         <section><h3>Events</h3>{selectedEvents.length ? selectedEvents.map(event => eventButton(event, selected)) : <p className="muted">No events on this date.</p>}</section>
       </aside>
