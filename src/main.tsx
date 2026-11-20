@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { inject } from '@vercel/analytics'
 import { dateIndex, dateLabel, dateParts, mod, moonColor, moonPhase, movePeriod, phaseNames, phaseSymbols, weekday, yearLabel } from './calendar'
 import { changeSeries, minutes, occurrences, type EventData, type Occurrence, type Rule } from './events'
-import { exportCampaign, key, newCampaign, parseCampaignBackup, parseStore, restoreActiveCampaign, saveIfCurrent, type Campaign, type Store } from './storage'
+import { deleteActiveCampaign, exportCampaign, key, newCampaign, parseCampaignBackup, parseStore, restoreActiveCampaign, saveIfCurrent, type Campaign, type Store } from './storage'
 import { dragonlance, greyhawk, lanceSource } from './presets'
 import { DateField } from './DateField'
 import { EventEditor, type Scope } from './EventEditor'
@@ -13,7 +13,7 @@ import { CalendarEditor } from './CalendarEditor'
 import './style.css'
 
 type View = 'Month' | 'Week' | 'Day' | 'Agenda'
-type Panel = 'new' | 'calendar' | 'event' | 'jump' | 'clock' | 'data' | 'search' | 'domains'
+type Panel = 'new' | 'calendar' | 'event' | 'jump' | 'clock' | 'data' | 'delete' | 'search' | 'domains'
 const views: View[] = ['Month', 'Week', 'Day', 'Agenda']
 
 function initialize() {
@@ -57,10 +57,11 @@ function App() {
   const [searchTo, setSearchTo] = useState(selected + 29)
   const [search, setSearch] = useState<{ query: string; from: number; to: number }>()
   const [restore, setRestore] = useState<Campaign>()
+  const [deleting, setDeleting] = useState(false)
   const restoreRequest = useRef(0)
   const [preset, setPreset] = useState('generic')
   const [campaignName, setCampaignName] = useState('')
-  const dialogTitle = { new: 'New campaign', calendar: 'Calendar settings', event: editing ? 'Edit event' : 'New event', jump: 'Jump to date', clock: 'Set campaign date', data: 'Campaign data', search: 'Search events', domains: 'Domain Play' }
+  const dialogTitle = { new: 'New campaign', calendar: 'Calendar settings', event: editing ? 'Edit event' : 'New event', jump: 'Jump to date', clock: 'Set campaign date', data: 'Campaign data', delete: 'Delete campaign', search: 'Search events', domains: 'Domain Play' }
 
   function syncSaved(value: string | null) {
     setRaw(value)
@@ -322,6 +323,29 @@ function App() {
           : <>Replace the active campaign <strong>{campaign.name}</strong> with the backup of <strong>{restore.name}</strong>?</>}</p><button className="primary" onClick={async () => {
           if (await commit(restoreActiveCampaign(store, restore), true)) { setSelected(restore.current); setSearch(undefined); close() }
         }}>{locked ? 'Restore campaign' : 'Replace active campaign'}</button></>}
+        {!locked && <div className="actions"><button className="danger" onClick={() => {
+          close()
+          open('delete')
+        }}>Delete active campaign</button></div>}
+      </div>}
+      {panel === 'delete' && <div className="form">
+        <p className="warning">Delete <strong>{campaign.name}</strong> and its calendar settings, events, and domain records from this browser?</p>
+        {store.campaigns.length === 1 && <p>An empty <strong>Example Campaign</strong> will open after deletion.</p>}
+        <div className="actions">
+          <button autoFocus disabled={deleting} onClick={() => open('data')}>Cancel</button>
+          <button disabled={deleting} onClick={backup}>Download backup</button>
+          <button className="danger" disabled={deleting} onClick={async () => {
+            setDeleting(true)
+            try {
+              const next = deleteActiveCampaign(store)
+              if (await commit(next)) {
+                setSelected(next.campaigns[0].current)
+                setSearch(undefined)
+                close()
+              }
+            } finally { setDeleting(false) }
+          }}>Delete campaign</button>
+        </div>
       </div>}
       {panel === 'search' && <form className="form" onSubmit={e => {
         e.preventDefault()

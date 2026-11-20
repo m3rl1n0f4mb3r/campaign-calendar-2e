@@ -63,6 +63,12 @@ export function restoreActiveCampaign(store: Store, backup: Campaign): Store {
   return { ...store, campaigns: store.campaigns.map(item => item.id === store.active ? { ...backup, id: item.id } : item) }
 }
 
+export function deleteActiveCampaign(store: Store): Store {
+  const campaigns = store.campaigns.filter(item => item.id !== store.active)
+  if (!campaigns.length) campaigns.push(newCampaign('Example Campaign'))
+  return { ...store, active: campaigns[0].id, campaigns }
+}
+
 export function saveStore(storage: Storage, store: Store) {
   storage.setItem(key, JSON.stringify(storeSchema.parse(store)))
 }
