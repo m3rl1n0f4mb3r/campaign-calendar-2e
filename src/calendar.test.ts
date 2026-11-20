@@ -3,7 +3,7 @@ import { dateIndex, dateParts, moonColor, moonPhase, phaseNames, template, weekd
 import { changeSeries, minutes, occurrences, type Series } from './events'
 import { migrate } from './migration'
 import { dragonlance, greyhawk } from './presets'
-import { exportCampaign, newCampaign, parseCampaignBackup, parseStore, restoreActiveCampaign, saveStore, type Store } from './storage'
+import { deleteActiveCampaign, exportCampaign, newCampaign, parseCampaignBackup, parseStore, restoreActiveCampaign, saveStore, type Store } from './storage'
 
 const event = (day: number, changes: Partial<Series> = {}): Series => ({
   title: 'Trade caravan', location: 'East gate', notes: 'Escorted', color: '#52745e',
@@ -93,6 +93,27 @@ describe('events', () => {
 })
 
 describe('migration and storage', () => {
+  it('deletes only the active campaign and opens a remaining campaign', () => {
+    const first = newCampaign('First')
+    const removed = newCampaign('Remove this')
+    const last = newCampaign('Last', greyhawk(), 31)
+    last.events = [event(31)]
+    const store: Store = { version: 1, active: removed.id, campaigns: [first, removed, last] }
+    const next = deleteActiveCampaign(store)
+    expect(next.active).toBe(first.id)
+    expect(next.campaigns).toEqual([first, last])
+    expect(store.campaigns).toHaveLength(3)
+  })
+
+  it('replaces the last deleted campaign with an empty starter', () => {
+    const campaign = newCampaign('Remove this')
+    campaign.events = [event(4)]
+    const next = deleteActiveCampaign({ version: 1, active: campaign.id, campaigns: [campaign] })
+    expect(next.campaigns).toHaveLength(1)
+    expect(next.campaigns[0]).toMatchObject({ id: next.active, name: 'Example Campaign', events: [] })
+    expect(next.active).not.toBe(campaign.id)
+  })
+
   it('round-trips a custom moon color and supplies a default for an older moon record', () => {
     const { calendar, current } = dragonlance()
     const older = parseCampaignBackup(exportCampaign(newCampaign('Krynn', calendar, current)))
