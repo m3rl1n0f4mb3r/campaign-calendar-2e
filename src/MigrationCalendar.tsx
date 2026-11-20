@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { dateIndex, dateLabel, dateParts, moonPhase, movePeriod, phaseNames, weekday, yearLabel } from './calendar'
 import { minutes, occurrences } from './events'
+import { turnEntries } from './domain'
 import type { migrate } from './migration'
 import type { Campaign } from './storage'
 
@@ -26,6 +27,7 @@ export function MigrationCalendar({ original, preview }: { original: Campaign; p
   const affected = new Set(preview.affected.map(change => change[side]))
   const showEvents = side === 'before' || preview.errors.length === 0
   const events = showEvents ? occurrences(cal, campaign.events, first, first + period.days) : []
+  const turns = showEvents ? turnEntries(cal, campaign.holdings ?? [], first, first + period.days) : []
 
   function switchSide(next: 'before' | 'after') {
     if (next === side) return
@@ -59,6 +61,8 @@ export function MigrationCalendar({ original, preview }: { original: Campaign; p
           <div className="cell-heading"><button className={day === campaign.current ? 'current-day' : ''} aria-pressed={day === selected} aria-label={dateLabel(cal, day)} onClick={() => setSelected(day)}>{day - first + 1}</button></div>
           {events.filter(event => event.start < (day + 1) * minutes && event.end > day * minutes).map(event =>
             <div className="event-chip" key={`${event.series.id}:${event.original}`} title={event.title} style={{ borderLeftColor: event.color }}><span>{event.title}</span></div>)}
+          {turns.filter(turn => turn.day === day).map(turn =>
+            <div className="event-chip domain-event" key={`turn:${turn.holdingId}`} title={turn.title}><span>{turn.title}</span></div>)}
         </div>
       })}
     </div></div>

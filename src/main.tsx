@@ -3,25 +3,28 @@ import { createRoot } from 'react-dom/client'
 import { inject } from '@vercel/analytics'
 import { dateIndex, dateLabel, dateParts, mod, moonColor, moonPhase, movePeriod, phaseNames, phaseSymbols, weekday, yearLabel } from './calendar'
 import { changeSeries, minutes, occurrences, type EventData, type Occurrence, type Rule } from './events'
-import { exportCampaign, key, newCampaign, parseCampaignBackup, parseStore, restoreActiveCampaign, saveStore, type Campaign, type Store } from './storage'
+import { exportCampaign, key, newCampaign, parseCampaignBackup, parseStore, restoreActiveCampaign, saveIfCurrent, type Campaign, type Store } from './storage'
 import { dragonlance, greyhawk, lanceSource } from './presets'
 import { DateField } from './DateField'
 import { EventEditor, type Scope } from './EventEditor'
+import { DomainPanel, type ReceiptLink } from './DomainPanel'
+import { turnEntries } from './domain'
 import { CalendarEditor } from './CalendarEditor'
 import './style.css'
 
 type View = 'Month' | 'Week' | 'Day' | 'Agenda'
-type Panel = 'new' | 'calendar' | 'event' | 'jump' | 'clock' | 'data' | 'search'
+type Panel = 'new' | 'calendar' | 'event' | 'jump' | 'clock' | 'data' | 'search' | 'domains'
 const views: View[] = ['Month', 'Week', 'Day', 'Agenda']
 
 function initialize() {
   const campaign = newCampaign('Example Campaign')
   const fallback: Store = { version: 1, active: campaign.id, campaigns: [campaign] }
+  let saved: string | null = null
   try {
-    const saved = localStorage.getItem(key)
-    return { store: saved ? parseStore(saved) : fallback, error: '', locked: false }
+    saved = localStorage.getItem(key)
+    return { store: saved ? parseStore(saved) : fallback, error: '', locked: false, raw: saved }
   } catch {
-    return { store: fallback, error: 'Saved data could not be read. Restore a backup, or use Data to start fresh.', locked: true }
+    return { store: fallback, error: 'Saved data could not be read. Restore a backup, or use Data to start fresh.', locked: true, raw: saved }
   }
 }
 
@@ -37,6 +40,7 @@ function Dialog({ title, close, children }: { title: string; close: () => void; 
 function App() {
   const [initial] = useState(initialize)
   const [store, setStore] = useState(initial.store)
+  const [raw, setRaw] = useState(initial.raw)
   const [locked, setLocked] = useState(initial.locked)
   const [error, setError] = useState(initial.error)
   const campaign = store.campaigns.find(item => item.id === store.active)!
@@ -45,6 +49,7 @@ function App() {
   const [view, setView] = useState<View>('Month')
   const [showMoons, setShowMoons] = useState(false)
   const [panel, setPanel] = useState<Panel>()
+  const [receipt, setReceipt] = useState<ReceiptLink>()
   const [editing, setEditing] = useState<Occurrence>()
   const [draftDate, setDraftDate] = useState(selected)
   const [query, setQuery] = useState('')
@@ -55,13 +60,60 @@ function App() {
   const restoreRequest = useRef(0)
   const [preset, setPreset] = useState('generic')
   const [campaignName, setCampaignName] = useState('')
-  const dialogTitle = { new: 'New campaign', calendar: 'Calendar settings', event: editing ? 'Edit event' : 'New event', jump: 'Jump to date', clock: 'Set campaign date', data: 'Campaign data', search: 'Search events' }
+  const dialogTitle = { new: 'New campaign', calendar: 'Calendar settings', event: editing ? 'Edit event' : 'New event', jump: 'Jump to date', clock: 'Set campaign date', data: 'Campaign data', search: 'Search events', domains: 'Domain Play' }
 
-  function commit(next: Store, replace = false) {
-    if (locked && !replace) { setError(initial.error); return false }
+  function syncSaved(value: string | null) {
+    setRaw(value)
+    if (value === null) {
+      setLocked(true)
+      setError('Saved data was removed in another tab. Restore a backup or start fresh.')
+      return
+    }
     try {
-      saveStore(localStorage, next)
-      setStore(next)
+      const latest = parseStore(value)
+      setStore(latest)
+      setLocked(false)
+      if (store.active !== latest.active) {
+        setSelected(latest.campaigns.find(item => item.id === latest.active)!.current)
+        setSearch(undefined)
+        close()
+      }
+    } catch {
+      setLocked(true)
+      setError('Saved data could not be read. Restore a backup or start fresh.')
+    }
+  }
+
+  useEffect(() => {
+    function onStorage(event: StorageEvent) {
+      if (event.storageArea !== localStorage || (event.key !== key && event.key !== null)) return
+      const value = localStorage.getItem(key)
+      if (value === raw) return
+      syncSaved(value)
+      if (panel && panel !== 'domains') close()
+      setError('Campaign data changed in another tab. Review the latest data before saving.')
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  })
+
+  async function commit(next: Store, replace = false) {
+    if (locked && !replace) return false
+    const write = () => saveIfCurrent(localStorage, raw, next)
+    try {
+      if (!navigator.locks && [...store.campaigns, ...next.campaigns].some(item => item.holdings?.length)) {
+        setError('Domain saves require a browser with cross-tab locking on a secure connection.')
+        return false
+      }
+      const result = navigator.locks ? await navigator.locks.request(key, write) : write()
+      if (!result.saved) {
+        syncSaved(result.raw)
+        if (panel !== 'domains') close()
+        setError('Campaign data changed in another tab. Review the latest data before saving.')
+        return false
+      }
+      setRaw(result.raw)
+      setStore(parseStore(result.raw))
       setError('')
       setLocked(false)
       return true
@@ -76,6 +128,7 @@ function App() {
   function open(next: Panel) {
     setPanel(next)
     setDraftDate(next === 'clock' ? campaign.current : selected)
+    if (next === 'domains') setReceipt(undefined)
     if (next === 'new') { setCampaignName(''); setPreset('generic') }
     if (next === 'search') { setSearchFrom(selected); setSearchTo(selected + 29) }
   }
@@ -84,8 +137,8 @@ function App() {
     setEditing(event)
     open('event')
   }
-  function setClock(day: number) {
-    if (saveCampaign({ ...campaign, current: day })) { setSelected(day); setSearch(undefined); close() }
+  async function setClock(day: number) {
+    if (await saveCampaign({ ...campaign, current: day })) { setSelected(day); setSearch(undefined); close() }
   }
   function backup() {
     const blob = new Blob([exportCampaign(campaign)], { type: 'application/json' })
@@ -95,10 +148,10 @@ function App() {
     link.click()
     setTimeout(() => URL.revokeObjectURL(link.href), 1000)
   }
-  function saveEvent(scope: Scope, data?: EventData, rule?: Rule) {
+  async function saveEvent(scope: Scope, data?: EventData, rule?: Rule) {
     const events = editing ? changeSeries(campaign.events, editing, scope, data, rule)
       : data ? [...campaign.events, { ...data, rule, id: crypto.randomUUID(), exceptions: {} }] : campaign.events
-    if (saveCampaign({ ...campaign, events })) close()
+    if (await saveCampaign({ ...campaign, events })) close()
   }
 
   const date = dateParts(cal, selected)
@@ -123,6 +176,25 @@ function App() {
     <span>{!event.allDay && compact && <small>{timeLabel(event)} </small>}{event.title}</span>
     {!compact && <small>{timeLabel(event)}{event.location && ` · ${event.location}`}</small>}
   </button>
+  function calendarEntries(events: Occurrence[], start: number, end: number, term?: string) {
+    const entries = events.map(event => ({
+      key: `${event.series.id}:${event.original}`, start: event.start, end: event.end,
+      render: (day: number, compact = false) => eventButton(event, day, compact),
+    }))
+    for (const entry of turnEntries(cal, campaign.holdings ?? [], start, end, term)) {
+      const entryKey = `turn:${entry.holdingId}:${entry.month.year}:${entry.month.period}`
+      entries.push({
+        key: entryKey, start: entry.day * minutes, end: (entry.day + 1) * minutes,
+        render: (_, compact = false) => <button key={entryKey} className={compact ? 'event-chip domain-event' : 'event-item domain-event'} onClick={() => {
+          setReceipt(entry)
+          setPanel('domains')
+        }}><span>{entry.title}</span></button>,
+      })
+    }
+    return entries.sort((a, b) => a.start - b.start)
+  }
+  const entries = calendarEntries(list, from, to, search?.query)
+  const selectedEntries = calendarEntries(selectedEvents, selected, selected + 1)
   const moonList = (day: number) => <ul className="calendar-moons" aria-label="Moon phases">{cal.moons.map((moon, index) => {
     const phase = moonPhase(moon, day)
     const label = `${moon.name}: ${phaseNames[phase]}`
@@ -137,7 +209,7 @@ function App() {
         {showCalendarMoons && moonList(day)}
         <button className="cell-add" aria-label={`Add event on ${dateLabel(cal, day)}`} onClick={() => openEvent(undefined, day)}>+</button>
       </div>
-      {list.filter(event => event.start < (day + 1) * minutes && event.end > day * minutes).map(event => eventButton(event, day, true))}
+      {entries.filter(entry => entry.start < (day + 1) * minutes && entry.end > day * minutes).map(entry => entry.render(day, true))}
     </div>
   }
 
@@ -150,12 +222,13 @@ function App() {
     <main className="layout">
       <aside className="sidebar">
         <label htmlFor="campaign-select">Campaign</label>
-        <select id="campaign-select" value={store.active} onChange={e => {
+        <select id="campaign-select" value={store.active} onChange={async e => {
           const active = e.target.value
-          if (commit({ ...store, active })) { setSelected(store.campaigns.find(item => item.id === active)!.current); setSearch(undefined) }
+          if (await commit({ ...store, active })) { setSelected(store.campaigns.find(item => item.id === active)!.current); setSearch(undefined) }
         }}>{store.campaigns.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
         <button className="sidebar-action" onClick={() => open('new')}>＋ New campaign</button>
         <button className="sidebar-action" onClick={() => open('calendar')}>Calendar settings</button>
+        <button className="sidebar-action" onClick={() => open('domains')}>Domain Play</button>
         <section className="clock-card">
           <h2>Campaign date</h2><p>{dateLabel(cal, campaign.current)}</p>
           <button className="sidebar-action" onClick={() => open('clock')}>Set date</button>
@@ -189,10 +262,10 @@ function App() {
         </div></div> : <div className="agenda">
           {view === 'Day' && !search && <h2>{cal.weekdays[weekday(cal, selected)]}, {dateLabel(cal, selected)}</h2>}
           {view === 'Day' && !search && showCalendarMoons && moonList(selected)}
-          {list.length ? list.map(event => {
-            const day = Math.floor(event.start / minutes)
-            return <div className="agenda-row" key={`${event.series.id}:${event.original}`}>
-              <div><time>{dateLabel(cal, day)}</time>{(search || view === 'Agenda') && showCalendarMoons && moonList(day)}</div>{eventButton(event, day)}
+          {entries.length ? entries.map(entry => {
+            const day = Math.floor(entry.start / minutes)
+            return <div className="agenda-row" key={entry.key}>
+              <div><time>{dateLabel(cal, day)}</time>{(search || view === 'Agenda') && showCalendarMoons && moonList(day)}</div>{entry.render(day)}
             </div>
           }) : <p className="muted">No events in this date range.</p>}
         </div>}
@@ -203,33 +276,34 @@ function App() {
           const phase = moonPhase(moon, selected)
           return <div className="moon" key={index}><span aria-hidden="true" style={{ color: moonColor(moon, index) }}>{phaseSymbols[phase]}</span><div><strong>{moon.name}</strong><small>{phaseNames[phase]}</small></div></div>
         })}</section>}
-        <section><h3>Events</h3>{selectedEvents.length ? selectedEvents.map(event => eventButton(event, selected)) : <p className="muted">No events on this date.</p>}</section>
+        <section><h3>Events</h3>{selectedEntries.length ? selectedEntries.map(entry => entry.render(selected)) : <p className="muted">No events on this date.</p>}</section>
       </aside>
     </main>
     {panel && <Dialog key={panel} title={dialogTitle[panel]} close={close}>
       {error && <p role="alert" className="error">{error}</p>}
+      {panel === 'domains' && <DomainPanel campaign={campaign} revision={raw} receipt={receipt} backup={backup} save={holdings => saveCampaign({ ...campaign, holdings })}/>}
       {panel === 'event' && <EventEditor calendar={cal} day={selected} event={editing} save={saveEvent} close={close}/>}
-      {panel === 'calendar' && <CalendarEditor campaign={campaign} close={close} backup={backup} save={next => {
-        if (saveCampaign(next)) { setSelected(next.current); setSearch(undefined); close() }
+      {panel === 'calendar' && <CalendarEditor campaign={campaign} close={close} backup={backup} save={async next => {
+        if (await saveCampaign(next)) { setSelected(next.current); setSearch(undefined); close() }
       }}/>}
       {(panel === 'jump' || panel === 'clock') && <form className="form" onSubmit={e => {
         e.preventDefault()
         if (panel === 'clock') setClock(draftDate)
         else { setSelected(draftDate); setSearch(undefined); close() }
       }}><DateField calendar={cal} label="Date" value={draftDate} onChange={setDraftDate}/><div className="actions"><button className="primary">{panel === 'clock' ? 'Set campaign date' : 'Go to date'}</button></div></form>}
-      {panel === 'new' && <form className="form" onSubmit={e => {
+      {panel === 'new' && <form className="form" onSubmit={async e => {
         e.preventDefault()
         if (!campaignName.trim()) return
         const sample = preset === 'dragonlance' ? dragonlance() : undefined
         const created = newCampaign(campaignName.trim(), sample?.calendar ?? (preset === 'greyhawk' ? greyhawk() : undefined), sample?.current)
-        if (commit({ ...store, active: created.id, campaigns: [...store.campaigns, created] })) { setSelected(created.current); setSearch(undefined); close() }
+        if (await commit({ ...store, active: created.id, campaigns: [...store.campaigns, created] })) { setSelected(created.current); setSearch(undefined); close() }
       }}><label>Campaign name<input autoFocus maxLength={120} required value={campaignName} onChange={e => setCampaignName(e.target.value)}/></label>
       <label>Calendar template<select value={preset} onChange={e => setPreset(e.target.value)}><option value="generic">Generic calendar</option><option value="dragonlance">Dragonlance · pre-Cataclysm example</option><option value="greyhawk">Greyhawk · festival calendar</option></select></label>
       {preset === 'dragonlance' && <p>Moon cycles come from <a href={lanceSource} target="_blank" rel="noreferrer">Tales of the Lance</a>. Replace the sample phase anchors with your campaign’s phases in Calendar settings.</p>}
       <div className="actions"><button className="primary">Create campaign</button></div></form>}
       {panel === 'data' && <div className="form"><button disabled={locked} onClick={backup}>Back up {campaign.name}</button>
-        {locked && <button className="danger" onClick={() => {
-          if (window.confirm('Replace unreadable browser data with a new campaign?') && commit(store, true)) close()
+        {locked && <button className="danger" onClick={async () => {
+          if (window.confirm('Replace unreadable browser data with a new campaign?') && await commit(store, true)) close()
         }}>Start fresh</button>}
         <label>Restore campaign backup<input type="file" accept=".json,application/json" onChange={async e => {
           const file = e.target.files?.[0]
@@ -245,8 +319,8 @@ function App() {
         }}/></label>
         {restore && <><p className="warning">{locked
           ? <>Restore <strong>{restore.name}</strong> and overwrite the unreadable app data?</>
-          : <>Replace the active campaign <strong>{campaign.name}</strong> with the backup of <strong>{restore.name}</strong>?</>}</p><button className="primary" onClick={() => {
-          if (commit(restoreActiveCampaign(store, restore), true)) { setSelected(restore.current); setSearch(undefined); close() }
+          : <>Replace the active campaign <strong>{campaign.name}</strong> with the backup of <strong>{restore.name}</strong>?</>}</p><button className="primary" onClick={async () => {
+          if (await commit(restoreActiveCampaign(store, restore), true)) { setSelected(restore.current); setSearch(undefined); close() }
         }}>{locked ? 'Restore campaign' : 'Replace active campaign'}</button></>}
       </div>}
       {panel === 'search' && <form className="form" onSubmit={e => {

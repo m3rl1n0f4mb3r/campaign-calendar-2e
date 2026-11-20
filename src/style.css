@@ -137,3 +137,17 @@ dialog:has(.migration-grid) { width: min(900px, 94vw); }
   .agenda-row, .event-item { break-inside: avoid; }
   .event-chip, .event-item { background: white; }
 }
+
+.domain-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .5rem; }
+.domain-line { align-items: end; padding: .5rem 0; border-bottom: 1px solid var(--border); margin-bottom: .5rem; }
+.domain-holding { border: 1px solid var(--border); border-radius: 8px; padding: .8rem; }
+.domain-holding details { margin-top: .65rem; }
+.domain-holding ul { margin: .35rem 0 0; padding-left: 1.25rem; }
+.domain-notes { white-space: pre-wrap; }
+.domain-event { border-left-color: #866639; }
+.ledger { width: 100%; border-collapse: collapse; }
+.ledger :is(th, td) { padding: .4rem .6rem; text-align: right; border-bottom: 1px solid var(--border); }
+.ledger th:first-child { text-align: left; }
+.ledger caption { caption-side: bottom; padding: .4rem .6rem; text-align: right; }
+.ledger tfoot { font-weight: 650; }
+@media (max-width: 600px) { .domain-fields { grid-template-columns: minmax(0, 1fr); } }

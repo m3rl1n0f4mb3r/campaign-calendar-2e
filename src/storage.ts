@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { template, type Calendar } from './calendar'
+import { holdingSchema, validHoldings, type Holding } from './domain'
 import type { Series } from './events'
 
 const coordinate = z.number().int().min(-10_000_000_000).max(10_000_000_000)
@@ -28,12 +29,13 @@ const series = eventData.extend({
   cutoff: coordinate.optional(),
 }).refine(validRange, 'Event end must follow its start')
 
-export type Campaign = { id: string; name: string; calendar: Calendar; current: number; events: Series[] }
+export type Campaign = { id: string; name: string; calendar: Calendar; current: number; events: Series[]; holdings?: Holding[] }
 export type Store = { version: 1; active: string; campaigns: Campaign[] }
-const campaignSchema = z.object({ id: name, name, calendar, current: coordinate, events: z.array(series) }).refine(campaign =>
+const campaignSchema = z.object({ id: name, name, calendar, current: coordinate, events: z.array(series), holdings: z.array(holdingSchema).optional() }).refine(campaign =>
+  validHoldings(campaign.calendar, campaign.holdings ?? []) &&
   new Set(campaign.events.map(event => event.id)).size === campaign.events.length &&
   campaign.events.every(event => event.rule?.weekdays.every(day => day < campaign.calendar.weekdays.length) ?? true),
-'Campaign event IDs and recurrence weekdays must be valid')
+'Campaign events and domain history must be valid')
 const storeSchema = z.object({
   version: z.literal(1), active: name,
   campaigns: z.array(campaignSchema).min(1),
@@ -63,4 +65,12 @@ export function restoreActiveCampaign(store: Store, backup: Campaign): Store {
 
 export function saveStore(storage: Storage, store: Store) {
   storage.setItem(key, JSON.stringify(storeSchema.parse(store)))
+}
+
+export function saveIfCurrent(storage: Pick<Storage, 'getItem' | 'setItem'>, expected: string | null, next: Store) {
+  const current = storage.getItem(key)
+  if (current !== expected) return { saved: false as const, raw: current }
+  const raw = JSON.stringify(storeSchema.parse(next))
+  storage.setItem(key, raw)
+  return { saved: true as const, raw }
 }
