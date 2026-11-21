@@ -23,19 +23,33 @@ const territoryResult = z.object({
 const uniqueTerritories = (items: { id: string }[]) => new Set(items.map(item => item.id)).size === items.length
 export const monthSchema = z.object({ year: amount, period: label })
 const balances = z.object({ cash: money, noncash: money })
-const line = z.object({ name: z.string().trim().min(1).max(242), balance: z.enum(['cash', 'noncash']), amount })
+export const paymentLabels = { liege: 'Liege payment', tithe: 'Tithe' }
+export type PaymentKind = keyof typeof paymentLabels
+const category = z.enum(['tribute', 'liege', 'tithe'])
+const line = z.object({ name: z.string().trim().min(1).max(242), balance: z.enum(['cash', 'noncash']), amount, category: category.optional() })
+const rate = z.number().int().min(0).max(10_000)
+const payment = z.object({ rate, cash: money, noncash: money, includeTribute: z.boolean(), approved: z.boolean() })
+const xpMode = z.enum(['pc', 'npc', 'off'])
+const xpDecision = z.object({ mode: z.enum(['pc', 'npc']), recipient: label, override: money.optional(), approved: z.boolean() })
+const award = z.object({ recipient: label, amount: money })
+const estimation = z.object({ basis: money, suggested: money, rate, manual: money })
+const review = z.object({ liege: estimation.optional(), tithe: estimation.optional(), xp: z.object({ basis: money, suggested: money }).optional() })
 const inputs = z.object({
   families: money, tax: money, services: money, resources: z.array(resource),
+  payments: z.object({ liege: payment.optional(), tithe: payment.optional() }).optional(), xp: xpDecision.optional(),
   override: money.optional(), realized: money, adjustments: z.array(line), notes: z.string(), territories: z.array(territoryTurn).min(1).refine(uniqueTerritories).optional(),
 })
 const receipt = z.object({ month: monthSchema, name: label, ruler: label, liege: z.string(), inputs,
-  opening: balances, closing: balances, gross: money, lines: z.array(line), territories: z.array(territoryResult).optional() })
+  opening: balances, closing: balances, gross: money, lines: z.array(line), review: review.optional(), xpAward: award.optional(), territories: z.array(territoryResult).optional() })
 export const holdingSchema = z.object({
   id: label, name: label, ruler: label, liege: z.string(), first: monthSchema, opening: balances,
   families: money, tax: money, services: money, resources: z.array(resource),
   territories: z.array(territory).min(1).refine(uniqueTerritories).optional(),
-  turns: z.array(receipt), replay: z.array(z.object({ month: monthSchema, inputs })),
+  liegeRate: rate.optional(), titheRate: rate.optional(), xpMode: xpMode.optional(),
+  turns: z.array(receipt), replay: z.array(z.object({ month: monthSchema, inputs, xpAward: award.optional() })),
 })
+export type Payment = z.infer<typeof payment>
+export type XpMode = z.infer<typeof xpMode>
 export type Territory = z.infer<typeof territory>
 export type TerritoryTurn = z.infer<typeof territoryTurn>
 export type Holding = z.infer<typeof holdingSchema>
@@ -74,8 +88,14 @@ export function territoriesFor(holding: Holding): Territory[] {
 
 export function territoryDefaults(holding: Holding): TurnInputs {
   const applyGrowth = holding.turns.some(turn => turn.territories)
+  const newPayment = (rate: number): Payment => ({ rate, cash: 0, noncash: 0, approved: false, includeTribute: false })
+  const liege = holding.liege.trim() ? newPayment(holding.liegeRate ?? 2000) : undefined
+  const tithe = holding.titheRate === undefined ? undefined : newPayment(holding.titheRate)
+  const mode = holding.xpMode
   return {
     ...holdingDefaults(holding),
+    payments: liege || tithe ? { liege, tithe } : undefined,
+    xp: mode && mode !== 'off' ? { mode, recipient: holding.ruler, approved: false } : undefined,
     territories: territoriesFor(holding).map(item => ({ ...item, applyGrowth, largeRate: 1, adjustment: 0 })),
   }
 }
@@ -83,12 +103,16 @@ export function territoryDefaults(holding: Holding): TurnInputs {
 export function replayInputs(holding: Holding, month: TurnMonth): TurnInputs {
   const saved = holding.replay.find(item => sameMonth(item.month, month))?.inputs
   if (!saved) return territoryDefaults(holding)
-  // Older drafts keep their original single-unit calculation.
-  if (!saved.territories) return saved
   const previous = holding.turns.at(-1)?.territories
-  return { ...saved, territories: saved.territories.map(item => ({
-    ...item, families: previous?.find(result => result.id === item.id)?.closing ?? item.families, override: undefined,
-  })) }
+  const renewed = (item?: Payment) => item && { ...item, approved: false }
+  return {
+    ...saved,
+    payments: saved.payments && { liege: renewed(saved.payments.liege), tithe: renewed(saved.payments.tithe) },
+    xp: saved.xp && { ...saved.xp, approved: false },
+    territories: saved.territories?.map(item => ({
+      ...item, families: previous?.find(result => result.id === item.id)?.closing ?? item.families, override: undefined,
+    })),
+  }
 }
 
 export function populationGrowth(families: number, largeRate: number) {
@@ -113,10 +137,9 @@ function calculateTerritory(item: TerritoryTurn) {
   return { id: item.id, name: item.name, opening: item.families, rate, suggested, closing, production, resources }
 }
 
-export function previewTurn(holding: Holding, month: TurnMonth, values: TurnInputs): Receipt {
+function turnIncome(values: TurnInputs) {
   const draft = inputs.parse(values)
   draft.resources = draft.resources.map(item => ({ ...item, rate: item.rate ?? resourceRates[item.type] }))
-  const opening = holding.turns.at(-1)?.closing ?? holding.opening
   draft.territories = draft.territories?.map(item => ({
     ...item, resources: item.resources.map(resource => ({ ...resource, rate: resource.rate ?? resourceRates[resource.type] })),
   }))
@@ -130,6 +153,40 @@ export function previewTurn(holding: Holding, month: TurnMonth, values: TurnInpu
     name: item.name, balance: 'noncash' as const, amount: draft.families * (item.rate ?? resourceRates[item.type]),
   }))
   const total = draft.override ?? production.reduce((sum, item) => money.parse(sum + item.amount), 0)
+  return { draft, territories, tax: money.parse(tax), services: money.parse(services), production, total }
+}
+
+function estimate(income: ReturnType<typeof turnIncome>): z.infer<typeof review> {
+  const { draft, tax, services, total } = income
+  const tribute = draft.adjustments.filter(line => line.category === 'tribute' && line.amount > 0)
+    .reduce((sum, line) => money.parse(sum + line.amount), 0)
+  function obligation(kind: PaymentKind) {
+    const payment = draft.payments?.[kind]
+    if (!payment) return
+    const basis = money.parse(tax + services + total + (payment.includeTribute ? tribute : 0))
+    const suggested = Number((BigInt(basis) * BigInt(payment.rate) + 5000n) / 10000n)
+    const manual = draft.adjustments.filter(line => line.category === kind && line.amount < 0)
+      .reduce((sum, line) => money.parse(sum - line.amount), 0)
+    return { basis, suggested, rate: payment.rate, manual }
+  }
+  const basis = money.parse(tax + total)
+  return {
+    liege: obligation('liege'), tithe: obligation('tithe'),
+    xp: draft.xp && { basis, suggested: Number(BigInt(basis) / (draft.xp.mode === 'pc' ? 100n : 200n)) },
+  }
+}
+
+export const turnEstimates = (values: TurnInputs) => estimate(turnIncome(values))
+
+export function previewTurn(holding: Holding, month: TurnMonth, values: TurnInputs): Receipt {
+  const income = turnIncome(values)
+  const { draft, territories, tax, services, production, total } = income
+  const estimates = estimate(income)
+  const opening = holding.turns.at(-1)?.closing ?? holding.opening
+  for (const item of draft.adjustments) {
+    if (item.category === 'tribute' && item.amount < 0) throw new Error('Incoming tribute must be a credit.')
+    if ((item.category === 'liege' || item.category === 'tithe') && item.amount > 0) throw new Error('Liege payments and tithes must be debits.')
+  }
   if (draft.realized > total) throw new Error('Resource cash realization exceeds resource production.')
   const lines: LedgerLine[] = [
     { name: 'Cash taxes', balance: 'cash', amount: tax },
@@ -141,6 +198,15 @@ export function previewTurn(holding: Holding, month: TurnMonth, values: TurnInpu
     { name: 'Resources realized in cash', balance: 'cash', amount: draft.realized },
   )
   lines.push(...draft.adjustments)
+  for (const kind of ['liege', 'tithe'] as const) {
+    const payment = draft.payments?.[kind]
+    if (!payment?.approved) continue
+    for (const balance of ['cash', 'noncash'] as const) {
+      if (payment[balance]) lines.push({ name: paymentLabels[kind], balance, amount: -payment[balance], category: kind })
+    }
+  }
+  const xpAward = draft.xp?.approved && estimates.xp
+    ? { recipient: draft.xp.recipient, amount: draft.xp.override ?? estimates.xp.suggested } : undefined
   const closing = { ...opening }
   for (const item of lines) closing[item.balance] = amount.parse(closing[item.balance] + amount.parse(item.amount))
   for (const balance of ['cash', 'noncash'] as const) {
@@ -149,6 +215,7 @@ export function previewTurn(holding: Holding, month: TurnMonth, values: TurnInpu
   return receipt.parse({
     month, name: holding.name, ruler: holding.ruler, liege: holding.liege, inputs: draft,
     opening, closing, gross: tax + services + total, lines, territories,
+    review: draft.payments || draft.xp ? estimates : undefined, xpAward,
   })
 }
 
@@ -170,7 +237,7 @@ export function reopenTurn(holding: Holding, month: TurnMonth): Holding {
   if (index < 0) throw new Error('This turn has already been reopened.')
   const removed = holding.turns.slice(index)
   return { ...holding, turns: holding.turns.slice(0, index),
-    replay: [...removed.map(({ month, inputs }) => ({ month, inputs })), ...holding.replay] }
+    replay: [...removed.map(({ month, inputs, xpAward }) => ({ month, inputs, xpAward })), ...holding.replay] }
 }
 
 export function formatGp(cp: number) {
