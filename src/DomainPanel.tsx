@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { dateLabel, displayYear } from './calendar'
-import { closingDay, dueMonth, formatGp, holdingDefaults, monthAt, previewTurn, recordTurn, reopenTurn, replayInputs, resourceRates, sameMonth,
-  type Holding, type LedgerLine, type Receipt, type TurnInputs, type TurnMonth } from './domain'
+import { closingDay, dueMonth, formatGp, monthAt, territoryPopulation, previewTurn, recordTurn, reopenTurn, resourceRates, sameMonth, territoriesFor, territoryDefaults, replayInputs,
+  type Holding, type LedgerLine, type Receipt, type Territory, type TerritoryTurn, type TurnInputs, type TurnMonth } from './domain'
 import type { Campaign } from './storage'
 
 export type ReceiptLink = { holdingId: string; month: TurnMonth }
@@ -14,7 +14,7 @@ type Props = {
 }
 type Screen =
   | { type: 'holding'; draft: Holding; revision: Props['revision'] }
-  | { type: 'preview'; id: string; month: TurnMonth; draft: TurnInputs; revision: Props['revision'] }
+  | { type: 'preview'; id: string; month: TurnMonth; draft: TurnInputs; revision: Props['revision']; reset?: boolean }
   | { type: 'receipt'; link: ReceiptLink }
   | { type: 'reopen'; link: ReceiptLink; revision: Props['revision'] }
 
@@ -25,16 +25,17 @@ function Money({ label, value, change, optional = false }: {
     value={value === undefined ? '' : value / 100} onChange={event => change(event.target.value === '' ? undefined : Math.round(event.target.valueAsNumber * 100))}/></label>
 }
 
-function Rates({ values, change }: { values: Pick<TurnInputs, 'families' | 'tax' | 'services' | 'resources'>; change: (values: Pick<TurnInputs, 'families' | 'tax' | 'services' | 'resources'>) => void }) {
-  return <>
-    <div className="domain-fields">
-      <label>Families<input type="number" min="0" step="1" required value={values.families} onChange={e => change({ ...values, families: +e.target.value })}/></label>
+function Rates({ values, change }: { values: Pick<TurnInputs, 'tax' | 'services'>; change: (values: Pick<TurnInputs, 'tax' | 'services'>) => void }) {
+  return <div className="form-row">
       <Money label="Tax per family (gp)" value={values.tax} change={tax => change({ ...values, tax: tax ?? 0 })}/>
       <Money label="Services per family (gp equivalent)" value={values.services} change={services => change({ ...values, services: services ?? 0 })}/>
     </div>
-    <fieldset><legend>Resources</legend>
-      {values.resources.map((resource, index) => {
-        const update = (patch: Partial<typeof resource>) => change({ ...values, resources: values.resources.map((item, i) => i === index ? { ...item, ...patch } : item) })
+}
+
+function Resources({ resources, change }: { resources: Territory['resources']; change: (resources: Territory['resources']) => void }) {
+  return <fieldset><legend>Resources</legend>
+      {resources.map((resource, index) => {
+        const update = (patch: Partial<typeof resource>) => change(resources.map((item, i) => i === index ? { ...item, ...patch } : item))
         return <div className="domain-fields domain-line" key={index}>
           <label>Name<input value={resource.name} required maxLength={120} onChange={e => update({ name: e.target.value })}/></label>
           <label>Type<select value={resource.type} onChange={e => update({ type: e.target.value as typeof resource.type })}>
@@ -43,12 +44,77 @@ function Rates({ values, change }: { values: Pick<TurnInputs, 'families' | 'tax'
           <label>Rate override (gp per family)<input type="number" min="0" step=".01" value={resource.rate === undefined ? '' : resource.rate / 100}
             placeholder={String(resourceRates[resource.type] / 100)}
             onChange={e => update({ rate: e.target.value === '' ? undefined : Math.round(e.target.valueAsNumber * 100) })}/></label>
-          <button type="button" onClick={() => change({ ...values, resources: values.resources.filter((_, i) => i !== index) })}>Remove resource</button>
+          <button type="button" onClick={() => change(resources.filter((_, i) => i !== index))}>Remove resource</button>
         </div>
       })}
-      <button type="button" onClick={() => change({ ...values, resources: [...values.resources, { name: '', type: 'animal' }] })}>Add resource</button>
-    </fieldset>
-  </>
+      <button type="button" onClick={() => change([...resources, { name: '', type: 'animal' }])}>Add resource</button>
+  </fieldset>
+}
+
+function Families({ label, count, change }: { label: string; count: number; change: (families: number) => void }) {
+  return <label>{label}<input type="number" min="0" step="1" required value={count} onChange={e => change(+e.target.value)}/></label>
+}
+
+function territoryName(item: Territory) {
+  return item.externalId ? `${item.name} (${item.externalId})` : item.name
+}
+
+function TerritorySetup({ items, change }: { items: Territory[]; change: (territories: Territory[]) => void }) {
+  return <fieldset className="form"><legend>Territories</legend>
+    {items.map(item => {
+      const update = (patch: Partial<Territory>) => change(items.map(other => other.id === item.id ? { ...other, ...patch } : other))
+      return <section className="domain-holding form" key={item.id}>
+        <div className="domain-fields">
+          <label>Territory name<input required maxLength={120} value={item.name} onChange={e => update({ name: e.target.value })}/></label>
+          <label>External hex ID<input maxLength={120} value={item.externalId ?? ''} onChange={e => update({ externalId: e.target.value || undefined })}/></label>
+          <label>Settlement type<select value={item.settlement} onChange={e => update({ settlement: e.target.value as Territory['settlement'] })}>
+            <option value="civilized">Civilized</option><option value="borderland">Borderland</option><option value="wilderness">Wilderness</option>
+          </select></label>
+          <Families label="Families" count={item.families} change={families => update({ families })}/>
+        </div>
+        <Resources resources={item.resources} change={resources => update({ resources })}/>
+        <button type="button" disabled={items.length === 1} onClick={() => change(items.filter(other => other.id !== item.id))}>Remove territory</button>
+      </section>
+    })}
+    <button type="button" onClick={() => change([...items, {
+      id: crypto.randomUUID(), name: '', settlement: 'wilderness', families: 0, resources: [],
+    }])}>Add territory</button>
+  </fieldset>
+}
+
+function TurnTerritories({ items, saved, result, change }: {
+  items: TerritoryTurn[]; saved?: TerritoryTurn[]; result?: Receipt['territories']; change: (territories: TerritoryTurn[]) => void
+}) {
+  return <fieldset className="form"><legend>Population and resources by territory</legend>
+    {items.map(item => {
+      const update = (patch: Partial<TerritoryTurn>) => change(items.map(other => other.id === item.id ? { ...other, ...patch } : other))
+      const { rate, suggested, closing } = territoryPopulation(item)
+      const previousOverride = saved?.find(previous => previous.id === item.id)?.override
+      const production = result?.find(summary => summary.id === item.id)?.production
+      const roll = (sign: -1 | 1) => {
+        const die = 1 + Math.floor(Math.random() * 10)
+        update({ adjustment: die * sign, roll: { die, sign } })
+      }
+      return <section className="domain-holding form" key={item.id}>
+        <h4>{territoryName(item)}</h4>
+        <p>{item.settlement} · {item.families} opening families</p>
+        {item.families > 500 && <label>Growth rate (%)<input type="number" min="1" max="5" step="any" required value={item.largeRate} onChange={e => update({ largeRate: +e.target.value })}/></label>}
+        <label className="check"><input type="checkbox" checked={item.applyGrowth} onChange={e => update({ applyGrowth: e.target.checked })}/> Apply suggested growth of {suggested} families ({rate}%)</label>
+        <div className="form-row">
+          <label>Family adjustment<input type="number" step="1" required value={item.adjustment} onChange={e => update({ adjustment: +e.target.value, roll: undefined })}/></label>
+          <label>Closing families override<input type="number" min="0" step="1" value={item.override ?? ''} onChange={e => update({ override: e.target.value === '' ? undefined : +e.target.value })}/></label>
+        </div>
+        <div className="button-group">
+          <button type="button" onClick={() => roll(1)}>Roll d10 gain</button>
+          <button type="button" onClick={() => roll(-1)}>Roll d10 loss</button>
+          {previousOverride !== undefined && <button type="button" onClick={() => update({ override: previousOverride })}>Reuse saved override ({previousOverride})</button>}
+        </div>
+        {item.roll && <p className="muted">d10 rolled {item.roll.die} for a {item.roll.sign > 0 ? 'gain' : 'loss'}.</p>}
+        <p><strong>{closing} closing families</strong>{production !== undefined && ` · ${formatGp(production)} resource value`}</p>
+        <Resources resources={item.resources} change={resources => update({ resources })}/>
+      </section>
+    })}
+  </fieldset>
 }
 
 function Ledger({ turn }: { turn: Receipt }) {
@@ -90,7 +156,7 @@ export function DomainPanel({ campaign, revision, receipt, save, backup }: Props
   }
   const startHolding = (holding?: Holding) => go({ type: 'holding', revision, draft: holding ?? {
     id: crypto.randomUUID(), name: '', ruler: '', liege: '', first: monthAt(calendar, current),
-    opening: { cash: 0, noncash: 0 }, families: 0, tax: 100, services: 1000, resources: [], turns: [], replay: [],
+    opening: { cash: 0, noncash: 0 }, families: 0, tax: 100, services: 1000, resources: [], territories: [{ id: crypto.randomUUID(), name: 'Core territory', settlement: 'wilderness', families: 0, resources: [] }], turns: [], replay: [],
   } })
   const back = <button type="button" onClick={() => go()}>Back to holdings</button>
 
@@ -102,7 +168,9 @@ export function DomainPanel({ campaign, revision, receipt, save, backup }: Props
     return <form className="form" onSubmit={e => {
       e.preventDefault()
       if (stale || pending) return
-      void persist(draft)
+      const territories = territoriesFor(draft)
+      const families = territories.reduce((sum, item) => sum + item.families, 0)
+      void persist({ ...draft, territories, families, resources: territories.length === 1 ? territories[0].resources : [] })
     }}>
       <h3>{holdings.some(item => item.id === draft.id) ? 'Edit holding' : 'New holding'}</h3>
       {stale && <p role="alert" className="warning">Campaign data changed. Return to holdings and reopen the editor.</p>}
@@ -112,6 +180,7 @@ export function DomainPanel({ campaign, revision, receipt, save, backup }: Props
         <label>Liege<input maxLength={120} value={draft.liege} onChange={e => change({ liege: e.target.value })}/></label>
       </div>
       <Rates values={draft} change={change}/>
+      <TerritorySetup items={territoriesFor(draft)} change={territories => change({ territories })}/>
       {openingEditable && <>
         <fieldset><legend>First month to close</legend><div className="form-row">
           <label>Month<select value={draft.first.period} onChange={e => change({ first: { ...draft.first, period: e.target.value } })}>
@@ -136,6 +205,17 @@ export function DomainPanel({ campaign, revision, receipt, save, backup }: Props
     const holding = holdings.find(item => item.id === screen.id)
     if (!holding) return <div className="form"><p>This holding is no longer available.</p>{back}</div>
     const { draft, month } = screen
+    const saved = screen.reset ? undefined : holding.replay.find(item => sameMonth(item.month, month))?.inputs.territories
+    const currentTerritories = territoriesFor(holding)
+    const historicalOnly = draft.territories?.filter(item => !currentTerritories.some(current => current.id === item.id)) ?? []
+    const currentOnly = draft.territories ? currentTerritories.filter(item => !draft.territories?.some(historical => historical.id === item.id)) : []
+    const changedSetup = draft.territories?.filter(item => currentTerritories.some(current => current.id === item.id &&
+      (current.name !== item.name || (current.externalId ?? '') !== (item.externalId ?? '') || current.settlement !== item.settlement ||
+       current.resources.length !== item.resources.length || current.resources.some((resource, index) => {
+         const previous = item.resources[index]
+         return !previous || previous.name !== resource.name || previous.type !== resource.type ||
+           (resource.rate ?? resourceRates[resource.type]) !== (previous.rate ?? resourceRates[previous.type])
+       })))) ?? []
     const change = (patch: Partial<TurnInputs>) => setScreen({ ...screen, draft: { ...draft, ...patch } })
     let result: Receipt | undefined
     let invalid = ''
@@ -155,8 +235,20 @@ export function DomainPanel({ campaign, revision, receipt, save, backup }: Props
     }}>
       <h3>{holding.name}{!stale && ` · ${date(month)}`}</h3>
       {stale ? <div className="warning" role="alert">This preview is stale. Refresh to use the latest ledger and campaign date.</div> : <>
-        <button type="button" onClick={() => setScreen({ ...screen, draft: holdingDefaults(holding) })}>Reset to current defaults</button>
+        <button type="button" onClick={() => setScreen({ ...screen, draft: territoryDefaults(holding), reset: true })}>Reset to current defaults</button>
         <Rates values={draft} change={change}/>
+        {draft.territories ? <>
+          {(historicalOnly.length > 0 || currentOnly.length > 0 || changedSetup.length > 0) && saved && <div className="warning">
+            {historicalOnly.length > 0 && <p>Only in this turn: {historicalOnly.map(territoryName).join(', ')}.</p>}
+            {currentOnly.length > 0 && <p>Only in the current holding: {currentOnly.map(territoryName).join(', ')}.</p>}
+            {changedSetup.length > 0 && <p>Territory details or resources differ: {changedSetup.map(territoryName).join(', ')}.</p>}
+          </div>}
+          <TurnTerritories items={draft.territories} saved={saved} result={result?.territories} change={territories => change({ territories })}/>
+        </> : <>
+          <p className="muted">This reopened turn uses the original single-unit calculation.</p>
+          <Families label="Families" count={draft.families} change={families => change({ families })}/>
+          <Resources resources={draft.resources} change={resources => change({ resources })}/>
+        </>}
         <div className="form-row">
           <Money label="Total resource value override (gp)" optional value={draft.override} change={override => change({ override })}/>
           <Money label="Resource value realized in cash (gp)" value={draft.realized} change={realized => change({ realized: realized ?? 0 })}/>
@@ -208,6 +300,13 @@ export function DomainPanel({ campaign, revision, receipt, save, backup }: Props
       <h3>{turn.name} · {date(turn.month)}</h3>
       <p>{turn.ruler}{turn.liege && ` · Liege: ${turn.liege}`}</p>
       <p>{turn.inputs.families} families · {formatGp(turn.inputs.tax)} tax per family · {formatGp(turn.inputs.services)} services per family</p>
+      {turn.territories && <ul>{turn.territories.map(item => {
+        const input = turn.inputs.territories?.find(territory => territory.id === item.id)
+        return <li key={item.id}>{input ? territoryName(input) : item.id}: {item.opening} → {item.closing} families · {formatGp(item.production)} resources
+          {input?.override !== undefined && ' · Closing count overridden'}
+          {input?.roll && ` · d10 ${input.roll.die} (${input.roll.sign > 0 ? 'gain' : 'loss'})`}
+        </li>
+      })}</ul>}
       <Ledger turn={turn}/>
       {turn.inputs.notes && <p className="domain-notes">{turn.inputs.notes}</p>}
       <div className="actions">{back}<button onClick={() => go({ type: 'reopen', link: screen.link, revision })}>Reopen turn</button></div>
@@ -222,6 +321,7 @@ export function DomainPanel({ campaign, revision, receipt, save, backup }: Props
       const balance = holding.turns.at(-1)?.closing ?? holding.opening
       return <section className="domain-holding" key={holding.id}>
         <h3>{holding.name}</h3>
+        <p>{territoriesFor(holding).length} {territoriesFor(holding).length === 1 ? 'territory' : 'territories'} · {holding.families} families</p>
         <p>{formatGp(balance.cash)} cash · {formatGp(balance.noncash)} noncash</p>
         <p>Next turn closes {date(next)}.</p>
         <div className="button-group">
