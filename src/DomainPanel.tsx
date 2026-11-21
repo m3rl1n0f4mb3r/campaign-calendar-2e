@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { dateLabel, displayYear } from './calendar'
-import { closingDay, dueMonth, formatGp, monthAt, territoryPopulation, previewTurn, recordTurn, reopenTurn, resourceRates, sameMonth, territoriesFor, territoryDefaults, replayInputs,
-  type Holding, type LedgerLine, type Receipt, type Territory, type TerritoryTurn, type TurnInputs, type TurnMonth } from './domain'
+import { closingDay, dueMonth, formatGp, monthAt, territoryPopulation, previewTurn, recordTurn, reopenTurn, resourceRates, sameMonth, territoriesFor, territoryDefaults, replayInputs, turnEstimates, paymentLabels,
+  type Holding, type LedgerLine, type Payment, type PaymentKind, type Receipt, type Territory, type TerritoryTurn, type TurnInputs, type TurnMonth } from './domain'
 import type { Campaign } from './storage'
 
 export type ReceiptLink = { holdingId: string; month: TurnMonth }
@@ -117,6 +117,42 @@ function TurnTerritories({ items, saved, result, change }: {
   </fieldset>
 }
 
+function Percent({ label, value, change }: { label: string; value: number; change: (rate: number) => void }) {
+  return <label>{label}<input type="number" min="0" max="100" step=".01" required value={value / 100}
+    onChange={event => change(Math.round(Number(event.target.value) * 100))}/></label>
+}
+
+function PaymentReview({ kind, value, estimate, previous, change }: {
+  kind: PaymentKind; value: Payment; estimate?: NonNullable<Receipt['review']>[PaymentKind]
+  previous?: Payment; change: (payment: Payment) => void
+}) {
+  const label = paymentLabels[kind]
+  const edit = (patch: Partial<Payment>) => change({ ...value, ...patch, approved: false })
+  return <fieldset className="form"><legend>{label}</legend>
+    <Percent label={`${label} rate (%)`} value={value.rate} change={rate => edit({ rate })}/>
+    <label className="check"><input type="checkbox" checked={value.includeTribute}
+      onChange={e => edit({ includeTribute: e.target.checked })}/> Include incoming tribute in {label.toLowerCase()} calculation</label>
+    {estimate && <p>Suggested <strong>{formatGp(estimate.suggested)}</strong> ({estimate.rate / 100}% of {formatGp(estimate.basis)}).</p>}
+    {previous?.approved && <p className="muted">Previously approved: {formatGp(previous.cash)} cash · {formatGp(previous.noncash)} noncash.</p>}
+    {!!estimate?.manual && <p className="warning">The ledger already includes {formatGp(estimate.manual)} in manually entered {label.toLowerCase()} debits.</p>}
+    {estimate && <div className="button-group">
+      <button type="button" onClick={() => edit({ cash: estimate.suggested, noncash: 0 })}>Use suggestion as cash</button>
+      <button type="button" onClick={() => edit({ cash: 0, noncash: estimate.suggested })}>Use suggestion as noncash</button>
+    </div>}
+    <div className="form-row">
+      <Money label={`${label} cash (gp)`} value={value.cash} change={cash => edit({ cash: cash ?? 0 })}/>
+      <Money label={`${label} noncash (gp)`} value={value.noncash} change={noncash => edit({ noncash: noncash ?? 0 })}/>
+    </div>
+    <label className="check"><input type="checkbox" checked={value.approved} disabled={!estimate}
+      onChange={e => change({ ...value, approved: e.target.checked })}/> Approve {label.toLowerCase()} of {formatGp(value.cash + value.noncash)}</label>
+  </fieldset>
+}
+
+function estimateReview(draft: TurnInputs) {
+  try { return turnEstimates(draft) }
+  catch { return undefined }
+}
+
 function Ledger({ turn }: { turn: Receipt }) {
   return <div className="grid-scroll"><table className="ledger">
     <thead><tr><th scope="col">Entry</th><th scope="col">Cash</th><th scope="col">Noncash value</th></tr></thead>
@@ -180,6 +216,15 @@ export function DomainPanel({ campaign, revision, receipt, save, backup }: Props
         <label>Liege<input maxLength={120} value={draft.liege} onChange={e => change({ liege: e.target.value })}/></label>
       </div>
       <Rates values={draft} change={change}/>
+      <fieldset className="form"><legend>Obligations and rulership XP</legend>
+        {draft.liege.trim() && <Percent label="Default liege rate (%)" value={draft.liegeRate ?? 2000} change={liegeRate => change({ liegeRate })}/>}
+        <label className="check"><input type="checkbox" checked={draft.titheRate !== undefined}
+          onChange={e => change({ titheRate: e.target.checked ? 1000 : undefined })}/> Suggest a tithe</label>
+        {draft.titheRate !== undefined && <Percent label="Default tithe rate (%)" value={draft.titheRate} change={titheRate => change({ titheRate })}/>}
+        <label>Ruler XP tracking<select value={draft.xpMode ?? 'off'} onChange={e => change({ xpMode: e.target.value as Holding['xpMode'] })}>
+          <option value="off">No XP tracking</option><option value="pc">Player character (PC)</option><option value="npc">Nonplayer character (NPC)</option>
+        </select></label>
+      </fieldset>
       <TerritorySetup items={territoriesFor(draft)} change={territories => change({ territories })}/>
       {openingEditable && <>
         <fieldset><legend>First month to close</legend><div className="form-row">
@@ -205,7 +250,9 @@ export function DomainPanel({ campaign, revision, receipt, save, backup }: Props
     const holding = holdings.find(item => item.id === screen.id)
     if (!holding) return <div className="form"><p>This holding is no longer available.</p>{back}</div>
     const { draft, month } = screen
-    const saved = screen.reset ? undefined : holding.replay.find(item => sameMonth(item.month, month))?.inputs.territories
+    const replay = screen.reset ? undefined : holding.replay.find(item => sameMonth(item.month, month))
+    const saved = replay?.inputs.territories
+    const estimates = stale ? undefined : estimateReview(draft)
     const currentTerritories = territoriesFor(holding)
     const historicalOnly = draft.territories?.filter(item => !currentTerritories.some(current => current.id === item.id)) ?? []
     const currentOnly = draft.territories ? currentTerritories.filter(item => !draft.territories?.some(historical => historical.id === item.id)) : []
@@ -216,7 +263,20 @@ export function DomainPanel({ campaign, revision, receipt, save, backup }: Props
          return !previous || previous.name !== resource.name || previous.type !== resource.type ||
            (resource.rate ?? resourceRates[resource.type]) !== (previous.rate ?? resourceRates[previous.type])
        })))) ?? []
-    const change = (patch: Partial<TurnInputs>) => setScreen({ ...screen, draft: { ...draft, ...patch } })
+    const change = (patch: Partial<TurnInputs>) => {
+      const next = { ...draft, ...patch }
+      if (draft.xp?.approved || draft.payments?.liege?.approved || draft.payments?.tithe?.approved) {
+        const updated = estimateReview(next)
+        for (const kind of ['liege', 'tithe'] as const) {
+          const payment = next.payments?.[kind]
+          if (payment?.approved && JSON.stringify(updated?.[kind]) !== JSON.stringify(estimates?.[kind])) {
+            next.payments = { ...next.payments, [kind]: { ...payment, approved: false } }
+          }
+        }
+        if (next.xp?.approved && updated?.xp?.basis !== estimates?.xp?.basis) next.xp = { ...next.xp, approved: false }
+      }
+      setScreen({ ...screen, draft: next })
+    }
     let result: Receipt | undefined
     let invalid = ''
     if (!stale) {
@@ -254,13 +314,18 @@ export function DomainPanel({ campaign, revision, receipt, save, backup }: Props
           <Money label="Resource value realized in cash (gp)" value={draft.realized} change={realized => change({ realized: realized ?? 0 })}/>
         </div>
         <fieldset><legend>Expenses and adjustments</legend>
-          {holding.liege && <p className="muted">Rules Cyclopedia reference: 20% liege payment and 10% recommended tithe. Enter the amount and balance to use.</p>}
           {draft.adjustments.map((line, index) => {
             const update = (patch: Partial<LedgerLine>) => change({ adjustments: draft.adjustments.map((item, i) => i === index ? { ...item, ...patch } : item) })
             const debit = line.amount < 0 || Object.is(line.amount, -0)
             return <div className="domain-fields domain-line" key={index}>
               <label>Entry<input required maxLength={120} value={line.name} onChange={e => update({ name: e.target.value })}/></label>
               <label>Balance<select value={line.balance} onChange={e => update({ balance: e.target.value as LedgerLine['balance'] })}><option value="cash">Cash</option><option value="noncash">Noncash</option></select></label>
+              <label>Category<select value={line.category ?? ''} onChange={e => {
+                const category = (e.target.value || undefined) as LedgerLine['category']
+                const amount = category === 'tribute' ? Math.abs(line.amount)
+                  : category ? -Math.abs(line.amount) : line.amount
+                update({ category, amount })
+              }}><option value="">General</option><option value="tribute">Incoming tribute</option><option value="liege">Liege payment</option><option value="tithe">Tithe</option></select></label>
               <label>Direction<select value={debit ? 'debit' : 'credit'} onChange={e => update({ amount: Math.abs(line.amount) * (e.target.value === 'debit' ? -1 : 1) })}><option value="debit">Debit</option><option value="credit">Credit</option></select></label>
               <Money label="Amount (gp)" value={Math.abs(line.amount)} change={amount => update({ amount: (amount ?? 0) * (debit ? -1 : 1) })}/>
               <button type="button" onClick={() => change({ adjustments: draft.adjustments.filter((_, i) => i !== index) })}>Remove entry</button>
@@ -268,6 +333,20 @@ export function DomainPanel({ campaign, revision, receipt, save, backup }: Props
           })}
           <div className="button-group"><button type="button" onClick={() => addLine('', 'cash')}>Add ledger entry</button><button type="button" onClick={() => addLine('Noncash expiration', 'noncash')}>Add expiration</button></div>
         </fieldset>
+        {(['liege', 'tithe'] as const).map(kind => {
+          const payment = draft.payments?.[kind]
+          return payment && <PaymentReview key={kind} kind={kind} value={payment} estimate={estimates?.[kind]}
+            previous={replay?.inputs.payments?.[kind]} change={value => change({ payments: { ...draft.payments, [kind]: value } })}/>
+        })}
+        {draft.xp && <fieldset className="form"><legend>Rulership XP</legend>
+          <p>{draft.xp.recipient} · {draft.xp.mode.toUpperCase()}</p>
+          {estimates?.xp && <p>Suggested <strong>{estimates.xp.suggested.toLocaleString()} XP</strong> from {formatGp(estimates.xp.basis)} in taxes and resource income.</p>}
+          {replay?.xpAward && <p className="muted">Previously approved: {replay.xpAward.amount.toLocaleString()} XP for {replay.xpAward.recipient}.</p>}
+          <label>XP override<input type="number" min="0" step="1" value={draft.xp.override ?? ''}
+            onChange={e => change({ xp: { ...draft.xp!, approved: false, override: e.target.value === '' ? undefined : +e.target.value } })}/></label>
+          <label className="check"><input type="checkbox" checked={draft.xp.approved} disabled={!estimates?.xp}
+            onChange={e => change({ xp: { ...draft.xp!, approved: e.target.checked } })}/> Approve XP award</label>
+        </fieldset>}
         <label>Turn notes<textarea value={draft.notes} onChange={e => change({ notes: e.target.value })}/></label>
         {result ? <Ledger turn={result}/> : <p role="alert" className="warning">{invalid}</p>}
       </>}
@@ -308,6 +387,15 @@ export function DomainPanel({ campaign, revision, receipt, save, backup }: Props
         </li>
       })}</ul>}
       <Ledger turn={turn}/>
+      {(['liege', 'tithe'] as const).map(kind => {
+        const estimate = turn.review?.[kind]
+        const payment = turn.inputs.payments?.[kind]
+        return estimate && payment && <p key={kind}>{paymentLabels[kind]}: {formatGp(estimate.suggested)} suggested
+          ({estimate.rate / 100}% of {formatGp(estimate.basis)}).
+          {payment.approved && ` Approved ${formatGp(payment.cash)} cash and ${formatGp(payment.noncash)} noncash.`}
+        </p>
+      })}
+      {turn.xpAward && <p><strong>{turn.xpAward.amount.toLocaleString()} XP</strong> awarded to {turn.xpAward.recipient}.</p>}
       {turn.inputs.notes && <p className="domain-notes">{turn.inputs.notes}</p>}
       <div className="actions">{back}<button onClick={() => go({ type: 'reopen', link: screen.link, revision })}>Reopen turn</button></div>
     </div>
@@ -319,6 +407,10 @@ export function DomainPanel({ campaign, revision, receipt, save, backup }: Props
     {holdings.map(holding => {
       const next = dueMonth(calendar, holding)
       const balance = holding.turns.at(-1)?.closing ?? holding.opening
+      const xpTotals = new Map<string, bigint>()
+      for (const { xpAward } of holding.turns) {
+        if (xpAward) xpTotals.set(xpAward.recipient, (xpTotals.get(xpAward.recipient) ?? 0n) + BigInt(xpAward.amount))
+      }
       return <section className="domain-holding" key={holding.id}>
         <h3>{holding.name}</h3>
         <p>{territoriesFor(holding).length} {territoriesFor(holding).length === 1 ? 'territory' : 'territories'} · {holding.families} families</p>
@@ -329,7 +421,8 @@ export function DomainPanel({ campaign, revision, receipt, save, backup }: Props
           <button disabled={closingDay(calendar, next) > current} onClick={() => startPreview(holding)}>Preview turn</button>
         </div>
         {holding.turns.length > 0 && <details><summary>Turn history</summary>
-          <ul>{[...holding.turns].reverse().map(turn => <li key={date(turn.month)}><button onClick={() => go({ type: 'receipt', link: { holdingId: holding.id, month: turn.month } })}>{date(turn.month)}</button></li>)}</ul>
+          {[...xpTotals].map(([ruler, total]) => <p key={ruler}>{ruler} · {total.toLocaleString()} XP recorded for this holding</p>)}
+          <ul>{[...holding.turns].reverse().map(turn => <li key={date(turn.month)}><button onClick={() => go({ type: 'receipt', link: { holdingId: holding.id, month: turn.month } })}>{date(turn.month)}</button>{turn.xpAward && ` · ${turn.xpAward.amount.toLocaleString()} XP for ${turn.xpAward.recipient}`}</li>)}</ul>
         </details>}
       </section>
     })}

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { dateIndex, template } from './calendar'
 import {
   closingDay, dueMonth, holdingDefaults, monthAt, previewTurn, recordTurn, reopenTurn,
-  replayInputs, turnEntries, populationGrowth, territoryDefaults, type Holding,
+  replayInputs, turnEntries, turnEstimates, populationGrowth, territoryDefaults, type Holding,
 } from './domain'
 import { migrate } from './migration'
 import { greyhawk } from './presets'
@@ -211,5 +211,79 @@ describe('territory population', () => {
     const reopened = reopenTurn(after, old.first)
     expect(replayInputs(reopened, old.first).territories).toBeUndefined()
     expect(replayInputs(reopened, due).territories?.[0].id).toBe(after.territories?.[0].id)
+  })
+})
+
+describe('obligations and rulership XP', () => {
+  const draftFor = () => territoryDefaults({ ...barony(), titheRate: 1000, xpMode: 'pc' })
+
+  it('estimates both obligations independently and excludes expenses, funding, and cash realization', () => {
+    const draft = draftFor()
+    const estimates = turnEstimates(draft)
+    expect(estimates).toEqual({
+      liege: { basis: 320_000, rate: 2000, suggested: 64_000, manual: 0 },
+      tithe: { basis: 320_000, rate: 1000, suggested: 32_000, manual: 0 },
+      xp: { basis: 120_000, suggested: 1200 },
+    })
+    expect(turnEstimates({ ...draft, realized: 30_000, adjustments: [
+      { name: 'Supplies', balance: 'cash', amount: -12_550 },
+      { name: 'Funding', balance: 'cash', amount: 90_000 },
+    ] })).toEqual(estimates)
+    expect(turnEstimates({ ...draft, xp: { ...draft.xp!, mode: 'npc' } }).xp?.suggested).toBe(600)
+    expect(territoryDefaults({ ...barony(), liege: '' })).toMatchObject({ payments: undefined, xp: undefined })
+  })
+
+  it('classifies tribute and manual payments and rounds half a copper upward', () => {
+    const draft = draftFor()
+    draft.adjustments = [
+      { name: 'Incoming tribute', category: 'tribute', balance: 'cash', amount: 1000 },
+      { name: 'Manual payment', category: 'liege', balance: 'cash', amount: -100 },
+    ]
+    draft.payments!.liege!.includeTribute = true
+    expect(turnEstimates(draft)).toMatchObject({
+      liege: { basis: 321_000, suggested: 64_200, manual: 100 },
+      tithe: { basis: 320_000 },
+      xp: { basis: 120_000 },
+    })
+    expect(turnEstimates({ ...draft, territories: undefined, families: 1, services: 0, tax: 1, resources: [],
+      payments: { tithe: { ...draft.payments!.tithe!, rate: 5000 } },
+    }).tithe?.suggested).toBe(1)
+  })
+
+  it('posts only confirmed splits and XP, leaving insufficient cash visible', () => {
+    const holding = barony()
+    const draft = draftFor()
+    draft.payments!.liege = { ...draft.payments!.liege!, cash: 10_000, noncash: 54_000, approved: true }
+    draft.payments!.tithe = { ...draft.payments!.tithe!, noncash: 32_000 }
+    draft.xp = { ...draft.xp!, override: 750, approved: true }
+    const turn = previewTurn(holding, holding.first, draft)
+    expect(turn.lines.filter(line => line.category)).toMatchObject([
+      { category: 'liege', balance: 'cash', amount: -10_000 }, { category: 'liege', balance: 'noncash', amount: -54_000 },
+    ])
+    expect(turn.closing).toEqual({ cash: 10_000, noncash: 246_000 })
+    expect(turn.xpAward).toEqual({ amount: 750, recipient: 'Ada' })
+    draft.payments!.liege!.cash = 64_000
+    expect(() => previewTurn(holding, holding.first, draft)).toThrow('cash balance is short')
+  })
+
+  it('keeps original decisions for replay review but recalculates and does not automatically approve them', () => {
+    const calendar = template()
+    const holding = barony()
+    const draft = draftFor()
+    draft.payments!.liege = { ...draft.payments!.liege!, noncash: 64_000, approved: true }
+    draft.xp = { ...draft.xp!, approved: true }
+    const posted = recordTurn(calendar, 29, holding, holding.first, draft)
+    const reopened = reopenTurn(posted, holding.first)
+    const replay = replayInputs(reopened, holding.first)
+    expect(reopened.replay[0].xpAward).toEqual({ recipient: 'Ada', amount: 1200 })
+    expect(replay.payments?.liege).toMatchObject({ rate: 2000, noncash: 64_000, approved: false })
+    replay.override = 80_000
+    const turn = previewTurn(reopened, holding.first, replay)
+    expect(turn.review).toMatchObject({ liege: { suggested: 60_000 }, tithe: { suggested: 30_000 }, xp: { suggested: 1000 } })
+    expect(turn.lines.some(line => line.category === 'liege')).toBe(false)
+    expect(turn.xpAward).toBeUndefined()
+    const campaign = newCampaign('Campaign')
+    const backup = parseCampaignBackup(exportCampaign({ ...campaign, holdings: [reopened] }))
+    expect(backup.holdings?.[0].replay[0]).toEqual(reopened.replay[0])
   })
 })
