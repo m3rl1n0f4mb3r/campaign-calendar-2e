@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { dateLabel, displayYear } from './calendar'
-import { closingDay, dueMonth, formatGp, monthAt, territoryPopulation, previewTurn, recordTurn, reopenTurn, resourceRates, sameMonth, territoriesFor, territoryDefaults, replayInputs, turnEstimates, paymentLabels,
+import { closingDay, dueMonth, formatGp, monthAt, territoryPopulation, previewTurn, recordTurn, reopenTurn, resourceRates, sameMonth, territoriesFor, territoryDefaults, replayInputs, turnEstimates, paymentLabels, availableEffects,
   type Holding, type LedgerLine, type Payment, type PaymentKind, type Receipt, type Territory, type TerritoryTurn, type TurnInputs, type TurnMonth } from './domain'
+import { ConfidencePanel } from './ConfidencePanel'
 import type { Campaign } from './storage'
 
 export type ReceiptLink = { holdingId: string; month: TurnMonth }
@@ -9,10 +10,12 @@ type Props = {
   campaign: Campaign
   revision: string | null
   receipt?: ReceiptLink
+  dominionEvent?: { holdingId: string; id: string }
   save: (holdings: Holding[]) => Promise<boolean>
   backup: () => void
 }
 type Screen =
+  | { type: 'confidence'; id: string; selectedEvent?: string }
   | { type: 'holding'; draft: Holding; revision: Props['revision'] }
   | { type: 'preview'; id: string; month: TurnMonth; draft: TurnInputs; revision: Props['revision']; reset?: boolean }
   | { type: 'receipt'; link: ReceiptLink }
@@ -148,8 +151,8 @@ function PaymentReview({ kind, value, estimate, previous, change }: {
   </fieldset>
 }
 
-function estimateReview(draft: TurnInputs) {
-  try { return turnEstimates(draft) }
+function estimateReview(draft: TurnInputs, holding: Holding, month: TurnMonth) {
+  try { return turnEstimates(draft, holding, month) }
   catch { return undefined }
 }
 
@@ -168,8 +171,8 @@ function Ledger({ turn }: { turn: Receipt }) {
   </table></div>
 }
 
-export function DomainPanel({ campaign, revision, receipt, save, backup }: Props) {
-  const [screen, setScreen] = useState<Screen | undefined>(receipt ? { type: 'receipt', link: receipt } : undefined)
+export function DomainPanel({ campaign, revision, receipt, dominionEvent, save, backup }: Props) {
+  const [screen, setScreen] = useState<Screen | undefined>(receipt ? { type: 'receipt', link: receipt } : dominionEvent ? { type: 'confidence', id: dominionEvent.holdingId, selectedEvent: dominionEvent.id } : undefined)
   const [pending, setPending] = useState(false)
   const [error, setError] = useState('')
   const { calendar, current } = campaign
@@ -195,6 +198,16 @@ export function DomainPanel({ campaign, revision, receipt, save, backup }: Props
     opening: { cash: 0, noncash: 0 }, families: 0, tax: 100, services: 1000, resources: [], territories: [{ id: crypto.randomUUID(), name: 'Core territory', settlement: 'wilderness', families: 0, resources: [] }], turns: [], replay: [],
   } })
   const back = <button type="button" onClick={() => go()}>Back to holdings</button>
+
+  if (screen?.type === 'confidence') {
+    const holding = holdings.find(item => item.id === screen.id)
+    if (!holding) return <div className="form"><p>This holding is no longer available.</p>{back}</div>
+    return <ConfidencePanel calendar={calendar} clock={current} holding={holding} revision={revision}
+      selectedEvent={screen.selectedEvent} back={() => go()}
+      openReceipt={month => go({ type: 'receipt', link: { holdingId: holding.id, month } })}
+      reopen={month => go({ type: 'reopen', link: { holdingId: holding.id, month }, revision })}
+      save={next => save(holdings.map(item => item.id === next.id ? next : item))}/>
+  }
 
   if (screen?.type === 'holding') {
     const { draft } = screen
@@ -252,7 +265,7 @@ export function DomainPanel({ campaign, revision, receipt, save, backup }: Props
     const { draft, month } = screen
     const replay = screen.reset ? undefined : holding.replay.find(item => sameMonth(item.month, month))
     const saved = replay?.inputs.territories
-    const estimates = stale ? undefined : estimateReview(draft)
+    const estimates = stale ? undefined : estimateReview(draft, holding, month)
     const currentTerritories = territoriesFor(holding)
     const historicalOnly = draft.territories?.filter(item => !currentTerritories.some(current => current.id === item.id)) ?? []
     const currentOnly = draft.territories ? currentTerritories.filter(item => !draft.territories?.some(historical => historical.id === item.id)) : []
@@ -266,7 +279,7 @@ export function DomainPanel({ campaign, revision, receipt, save, backup }: Props
     const change = (patch: Partial<TurnInputs>) => {
       const next = { ...draft, ...patch }
       if (draft.xp?.approved || draft.payments?.liege?.approved || draft.payments?.tithe?.approved) {
-        const updated = estimateReview(next)
+        const updated = estimateReview(next, holding, month)
         for (const kind of ['liege', 'tithe'] as const) {
           const payment = next.payments?.[kind]
           if (payment?.approved && JSON.stringify(updated?.[kind]) !== JSON.stringify(estimates?.[kind])) {
@@ -333,6 +346,15 @@ export function DomainPanel({ campaign, revision, receipt, save, backup }: Props
           })}
           <div className="button-group"><button type="button" onClick={() => addLine('', 'cash')}>Add ledger entry</button><button type="button" onClick={() => addLine('Noncash expiration', 'noncash')}>Add expiration</button></div>
         </fieldset>
+        {availableEffects(holding, month).length > 0 && <fieldset className="form"><legend>Approved event and confidence effects</legend>
+          {availableEffects(holding, month).map(effect => <div key={effect.id}>
+            <label className="check"><input type="checkbox" checked={draft.effectIds?.includes(effect.id) ?? false}
+              onChange={e => change({ effectIds: e.target.checked ? [...(draft.effectIds ?? []), effect.id] : draft.effectIds?.filter(id => id !== effect.id) })}/>
+              {effect.title} · {formatGp(effect.amount)} {effect.balance} · {effect.category}
+            </label>
+            {replay?.inputs.effectIds?.includes(effect.id) && <p className="muted">Applied in the original turn. Select to reapply.</p>}
+          </div>)}
+        </fieldset>}
         {(['liege', 'tithe'] as const).map(kind => {
           const payment = draft.payments?.[kind]
           return payment && <PaymentReview key={kind} kind={kind} value={payment} estimate={estimates?.[kind]}
@@ -418,6 +440,7 @@ export function DomainPanel({ campaign, revision, receipt, save, backup }: Props
         <p>Next turn closes {date(next)}.</p>
         <div className="button-group">
           <button onClick={() => startHolding(holding)}>Edit holding</button>
+          <button onClick={() => go({ type: 'confidence', id: holding.id })}>Confidence and events</button>
           <button disabled={closingDay(calendar, next) > current} onClick={() => startPreview(holding)}>Preview turn</button>
         </div>
         {holding.turns.length > 0 && <details><summary>Turn history</summary>

@@ -1,6 +1,7 @@
 import { dateIndex, dateLabel, dateParts, moonPhase, mod, phaseNames, weekday, type Calendar } from './calendar'
 import { dayOf, hasOccurrence, minutes, occurrences, type EventData } from './events'
 import type { Campaign } from './storage'
+import { yearStart } from './confidence'
 import { closingDay, dueMonth, validHoldings, type TurnMonth } from './domain'
 
 export function migrate(campaign: Campaign, next: Calendar) {
@@ -8,6 +9,14 @@ export function migrate(campaign: Campaign, next: Calendar) {
   const changes: string[] = []
   const affected: { before: number; after: number }[] = []
   const errors: string[] = []
+  function changeDate(before: number, after: number, label: string) {
+    const previous = `${old.weekdays[weekday(old, before)]}, ${dateLabel(old, before)}`
+    const proposed = `${next.weekdays[weekday(next, after)]}, ${dateLabel(next, after)}`
+    if (before !== after || previous !== proposed) {
+      changes.push(`${label}: ${previous} → ${proposed}`)
+      affected.push({ before, after })
+    }
+  }
   function day(value: number, label: string) {
     const date = dateParts(old, value)
     const period = next.periods.find(p => p.id === date.period)
@@ -16,12 +25,7 @@ export function migrate(campaign: Campaign, next: Calendar) {
       return value
     }
     const mapped = dateIndex(next, { ...date, day: Math.min(date.day, period.days) })
-    const oldWeekday = old.weekdays[weekday(old, value)]
-    const newWeekday = next.weekdays[weekday(next, mapped)]
-    if (dateLabel(old, value) !== dateLabel(next, mapped) || oldWeekday !== newWeekday) {
-      changes.push(`${label}: ${oldWeekday}, ${dateLabel(old, value)} → ${newWeekday}, ${dateLabel(next, mapped)}`)
-      affected.push({ before: value, after: mapped })
-    }
+    changeDate(value, mapped, label)
     return mapped
   }
   const time = (value: number, label: string) => day(dayOf(value), label) * minutes + mod(value, minutes)
@@ -53,8 +57,7 @@ export function migrate(campaign: Campaign, next: Calendar) {
     const after = phaseNames[moonPhase(moon, current)]
     changes.push(`${moon.name} at the campaign date: ${previous ? phaseNames[moonPhase(previous, campaign.current)] + ' → ' : ''}${after}`)
   }
-  const holdings = campaign.holdings ?? []
-  for (const holding of holdings) {
+  const holdings = campaign.holdings?.map(holding => {
     function compareMonth(label: string, before: TurnMonth, after = before) {
       const start = closingDay(old, before)
       try {
@@ -69,12 +72,34 @@ export function migrate(campaign: Campaign, next: Calendar) {
     }
     for (const turn of holding.turns) compareMonth('recorded turn', turn.month)
     for (const draft of holding.replay) compareMonth('reopened turn', draft.month)
+    for (const effect of holding.confidence?.effects ?? []) compareMonth(effect.title, effect.target)
     if (validHoldings(next, [holding])) {
       compareMonth('next turn', dueMonth(old, holding), dueMonth(next, holding))
     } else {
       errors.push(`${holding.name} would have an invalid first month, or reordered domain turns.`)
     }
-  }
+    const state = holding.confidence
+    if (!state) return holding
+    const annualDate = (value: number, year: number, label: string) => {
+      const proposed = yearStart(next, year)
+      changeDate(value, proposed, label)
+      return proposed
+    }
+    const confidence = {
+      ...state,
+      start: state.start === undefined ? undefined : day(state.start, `${holding.name} start`),
+      reviews: state.reviews.map(review => ({ ...review, day: annualDate(review.day, review.year, `${holding.name} annual review`) })),
+      checks: state.checks.map(check => {
+        const label = `${holding.name} confidence check`
+        return { ...check, day: check.trigger === 'annual'
+          ? annualDate(check.day, dateParts(old, check.day).year, label)
+          : day(check.day, label) }
+      }),
+      events: state.events.map(event => ({ ...event, day: day(event.day, event.title),
+        resolvedDay: event.resolvedDay === undefined ? undefined : day(event.resolvedDay, `${event.title} resolution`) })),
+    }
+    return { ...holding, confidence }
+  })
   if (!errors.length && events.some(event => event.rule)) {
     const before = occurrences(old, campaign.events.filter(event => event.rule), campaign.current, campaign.current + 30)
     const after = occurrences(next, events.filter(event => event.rule), current, current + 30)
@@ -84,5 +109,5 @@ export function migrate(campaign: Campaign, next: Calendar) {
       changes.push(`${label}: ${summary || 'No occurrences'}${results.length > 10 ? ` (+${results.length - 10} more)` : ''}`)
     }
   }
-  return { campaign: { ...campaign, current, calendar: { ...next, moons }, events }, changes, errors, affected }
+  return { campaign: { ...campaign, current, calendar: { ...next, moons }, events, ...(holdings ? { holdings } : {}) }, changes, errors, affected }
 }

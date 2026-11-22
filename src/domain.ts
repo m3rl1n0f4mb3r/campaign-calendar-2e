@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { dateIndex, dateParts, movePeriod, type Calendar } from './calendar'
+import { confidenceSchema, type DomainEffect } from './confidence'
 
 const amount = z.number().int().min(-Number.MAX_SAFE_INTEGER).max(Number.MAX_SAFE_INTEGER)
 const money = amount.min(0)
@@ -26,7 +27,7 @@ const balances = z.object({ cash: money, noncash: money })
 export const paymentLabels = { liege: 'Liege payment', tithe: 'Tithe' }
 export type PaymentKind = keyof typeof paymentLabels
 const category = z.enum(['tribute', 'liege', 'tithe'])
-const line = z.object({ name: z.string().trim().min(1).max(242), balance: z.enum(['cash', 'noncash']), amount, category: category.optional() })
+const line = z.object({ name: z.string().trim().min(1).max(242), balance: z.enum(['cash', 'noncash']), amount, category: category.optional(), effectId: label.optional() })
 const rate = z.number().int().min(0).max(10_000)
 const payment = z.object({ rate, cash: money, noncash: money, includeTribute: z.boolean(), approved: z.boolean() })
 const xpMode = z.enum(['pc', 'npc', 'off'])
@@ -36,6 +37,7 @@ const estimation = z.object({ basis: money, suggested: money, rate, manual: mone
 const review = z.object({ liege: estimation.optional(), tithe: estimation.optional(), xp: z.object({ basis: money, suggested: money }).optional() })
 const inputs = z.object({
   families: money, tax: money, services: money, resources: z.array(resource),
+  effectIds: z.array(label).optional(),
   payments: z.object({ liege: payment.optional(), tithe: payment.optional() }).optional(), xp: xpDecision.optional(),
   override: money.optional(), realized: money, adjustments: z.array(line), notes: z.string(), territories: z.array(territoryTurn).min(1).refine(uniqueTerritories).optional(),
 })
@@ -45,6 +47,7 @@ export const holdingSchema = z.object({
   id: label, name: label, ruler: label, liege: z.string(), first: monthSchema, opening: balances,
   families: money, tax: money, services: money, resources: z.array(resource),
   territories: z.array(territory).min(1).refine(uniqueTerritories).optional(),
+  confidence: confidenceSchema.optional(),
   liegeRate: rate.optional(), titheRate: rate.optional(), xpMode: xpMode.optional(),
   turns: z.array(receipt), replay: z.array(z.object({ month: monthSchema, inputs, xpAward: award.optional() })),
 })
@@ -107,6 +110,7 @@ export function replayInputs(holding: Holding, month: TurnMonth): TurnInputs {
   const renewed = (item?: Payment) => item && { ...item, approved: false }
   return {
     ...saved,
+    effectIds: undefined,
     payments: saved.payments && { liege: renewed(saved.payments.liege), tithe: renewed(saved.payments.tithe) },
     xp: saved.xp && { ...saved.xp, approved: false },
     territories: saved.territories?.map(item => ({
@@ -137,7 +141,22 @@ function calculateTerritory(item: TerritoryTurn) {
   return { id: item.id, name: item.name, opening: item.families, rate, suggested, closing, production, resources }
 }
 
-function turnIncome(values: TurnInputs) {
+export function availableEffects(holding: Holding, month: TurnMonth) {
+  const posted = new Set(holding.turns.flatMap(turn => turn.inputs.effectIds ?? []))
+  return holding.confidence?.effects.filter(effect => sameMonth(effect.target, month) && !posted.has(effect.id)) ?? []
+}
+
+function approvedEffects(values: TurnInputs, holding?: Holding, month?: TurnMonth) {
+  const ids = values.effectIds ?? []
+  if (!ids.length) return []
+  const available = holding && month ? availableEffects(holding, month) : []
+  if (new Set(ids).size !== ids.length || ids.some(id => !available.some(effect => effect.id === id))) {
+    throw new Error('A selected effect is no longer available for this turn.')
+  }
+  return available.filter(effect => ids.includes(effect.id))
+}
+
+function turnIncome(values: TurnInputs, effects: DomainEffect[] = []) {
   const draft = inputs.parse(values)
   draft.resources = draft.resources.map(item => ({ ...item, rate: item.rate ?? resourceRates[item.type] }))
   draft.territories = draft.territories?.map(item => ({
@@ -153,11 +172,18 @@ function turnIncome(values: TurnInputs) {
     name: item.name, balance: 'noncash' as const, amount: draft.families * (item.rate ?? resourceRates[item.type]),
   }))
   const total = draft.override ?? production.reduce((sum, item) => money.parse(sum + item.amount), 0)
-  return { draft, territories, tax: money.parse(tax), services: money.parse(services), production, total }
+  const adjusted = { tax, services, resource: total }
+  for (const effect of effects) {
+    if (effect.category !== 'general') adjusted[effect.category] = amount.parse(adjusted[effect.category] + effect.amount)
+  }
+  for (const key of ['tax', 'services', 'resource'] as const) {
+    if (adjusted[key] < 0) throw new Error('An approved effect reduces an income category below zero.')
+  }
+  return { draft, territories, tax: money.parse(tax), services: money.parse(services), production, total, adjusted }
 }
 
 function estimate(income: ReturnType<typeof turnIncome>): z.infer<typeof review> {
-  const { draft, tax, services, total } = income
+  const { draft, adjusted: { tax, services, resource: total } } = income
   const tribute = draft.adjustments.filter(line => line.category === 'tribute' && line.amount > 0)
     .reduce((sum, line) => money.parse(sum + line.amount), 0)
   function obligation(kind: PaymentKind) {
@@ -176,10 +202,12 @@ function estimate(income: ReturnType<typeof turnIncome>): z.infer<typeof review>
   }
 }
 
-export const turnEstimates = (values: TurnInputs) => estimate(turnIncome(values))
+export const turnEstimates = (values: TurnInputs, holding?: Holding, month?: TurnMonth) =>
+  estimate(turnIncome(values, approvedEffects(values, holding, month)))
 
 export function previewTurn(holding: Holding, month: TurnMonth, values: TurnInputs): Receipt {
-  const income = turnIncome(values)
+  const effects = approvedEffects(values, holding, month)
+  const income = turnIncome(values, effects)
   const { draft, territories, tax, services, production, total } = income
   const estimates = estimate(income)
   const opening = holding.turns.at(-1)?.closing ?? holding.opening
@@ -187,7 +215,7 @@ export function previewTurn(holding: Holding, month: TurnMonth, values: TurnInpu
     if (item.category === 'tribute' && item.amount < 0) throw new Error('Incoming tribute must be a credit.')
     if ((item.category === 'liege' || item.category === 'tithe') && item.amount > 0) throw new Error('Liege payments and tithes must be debits.')
   }
-  if (draft.realized > total) throw new Error('Resource cash realization exceeds resource production.')
+  if (draft.realized > income.adjusted.resource) throw new Error('Resource cash realization exceeds resource production.')
   const lines: LedgerLine[] = [
     { name: 'Cash taxes', balance: 'cash', amount: tax },
     { name: 'Standard services', balance: 'noncash', amount: services },
@@ -197,7 +225,9 @@ export function previewTurn(holding: Holding, month: TurnMonth, values: TurnInpu
     { name: 'Resources realized in cash', balance: 'noncash', amount: -draft.realized },
     { name: 'Resources realized in cash', balance: 'cash', amount: draft.realized },
   )
-  lines.push(...draft.adjustments)
+  lines.push(...draft.adjustments, ...effects.map(effect => ({
+    name: effect.title, balance: effect.balance, amount: effect.amount, effectId: effect.id,
+  })))
   for (const kind of ['liege', 'tithe'] as const) {
     const payment = draft.payments?.[kind]
     if (!payment?.approved) continue
@@ -214,7 +244,7 @@ export function previewTurn(holding: Holding, month: TurnMonth, values: TurnInpu
   }
   return receipt.parse({
     month, name: holding.name, ruler: holding.ruler, liege: holding.liege, inputs: draft,
-    opening, closing, gross: tax + services + total, lines, territories,
+    opening, closing, gross: income.adjusted.tax + income.adjusted.services + income.adjusted.resource, lines, territories,
     review: draft.payments || draft.xp ? estimates : undefined, xpAward,
   })
 }
@@ -249,6 +279,19 @@ export function validHoldings(cal: Calendar, holdings: Holding[]) {
   try {
     return holdings.every(holding => {
       let last = closingDay(cal, holding.first) - 1
+      if (holding.confidence) {
+        const state = holding.confidence
+        if (new Set(state.reviews.map(item => item.year)).size !== state.reviews.length) return false
+        const ids = [...state.events, ...state.checks, ...state.effects].map(item => item.id)
+        if (new Set(ids).size !== ids.length) return false
+        const sources = new Set([...state.events, ...state.checks].map(item => item.id))
+        for (const effect of state.effects) {
+          if (!sources.has(effect.source)) return false
+          closingDay(cal, effect.target)
+        }
+        const postedEffects = holding.turns.flatMap(turn => turn.inputs.effectIds ?? [])
+        if (new Set(postedEffects).size !== postedEffects.length || postedEffects.some(id => !state.effects.some(effect => effect.id === id))) return false
+      }
       return [...holding.turns, ...holding.replay].every(({ month }) => {
         const day = closingDay(cal, month)
         if (day <= last) return false
@@ -267,4 +310,12 @@ export function turnEntries(cal: Calendar, holdings: Holding[], from: number, to
     if (day < from || day >= to || ![title, turn.ruler, turn.liege, turn.inputs.notes].some(text => text.toLowerCase().includes(needle))) return []
     return [{ day, title, holdingId: holding.id, month: turn.month }]
   }))
+}
+
+export function dominionEntries(holdings: Holding[], from: number, to: number, query = '') {
+  const needle = query.trim().toLowerCase()
+  return holdings.flatMap(holding => (holding.confidence?.events ?? [])
+    .filter(event => event.status !== 'removed' && event.day >= from && event.day < to &&
+      [event.title, event.notes, holding.name].some(value => value.toLowerCase().includes(needle)))
+    .map(event => ({ ...event, holdingId: holding.id })))
 }
