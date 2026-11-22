@@ -7,6 +7,7 @@ import { deleteActiveCampaign, exportCampaign, key, newCampaign, parseCampaignBa
 import { dragonlance, greyhawk, lanceSource } from './presets'
 import { DateField } from './DateField'
 import { EventEditor, type Scope } from './EventEditor'
+import { UserGuide, type GuideTopic } from './UserGuide'
 import { DomainPanel, type ReceiptLink } from './DomainPanel'
 import { dominionEntries, turnEntries } from './domain'
 import { CalendarEditor } from './CalendarEditor'
@@ -39,6 +40,12 @@ function Dialog({ title, close, children }: { title: string; close: () => void; 
 
 function App() {
   const [initial] = useState(initialize)
+  const [guide, setGuide] = useState<GuideTopic>()
+  const helpOpener = useRef<HTMLElement | null>(null)
+  function openGuide(topic: GuideTopic) {
+    helpOpener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    setGuide(topic)
+  }
   const [store, setStore] = useState(initial.store)
   const [raw, setRaw] = useState(initial.raw)
   const [locked, setLocked] = useState(initial.locked)
@@ -229,7 +236,7 @@ function App() {
   return <>
     <header className="masthead">
       <div className="brand"><span aria-hidden="true">◈</span> Campaign Calendar</div>
-      <div className="header-actions"><button onClick={() => open('search')}>Search</button><button onClick={() => open('data')}>Data</button></div>
+      <div className="header-actions"><button onClick={() => openGuide('get-started')}>Help</button><button onClick={() => open('search')}>Search</button><button onClick={() => open('data')}>Data</button></div>
     </header>
     {error && <p role="alert" className="error global-error">{error}</p>}
     <main className="layout">
@@ -294,7 +301,7 @@ function App() {
     </main>
     {panel && <Dialog key={panel} title={dialogTitle[panel]} close={close}>
       {error && <p role="alert" className="error">{error}</p>}
-      {panel === 'domains' && <DomainPanel campaign={campaign} revision={raw} receipt={receipt} dominionEvent={dominionEvent} backup={backup} save={holdings => saveCampaign({ ...campaign, holdings })}/>}
+      {panel === 'domains' && <DomainPanel campaign={campaign} revision={raw} receipt={receipt} dominionEvent={dominionEvent} help={openGuide} backup={backup} save={holdings => saveCampaign({ ...campaign, holdings })}/>}
       {panel === 'event' && <EventEditor calendar={cal} day={selected} event={editing} save={saveEvent} close={close}/>}
       {panel === 'calendar' && <CalendarEditor campaign={campaign} close={close} backup={backup} save={async next => {
         if (await saveCampaign(next)) { setSelected(next.current); setSearch(undefined); close() }
@@ -367,6 +374,10 @@ function App() {
         <DateField calendar={cal} label="From" value={searchFrom} onChange={setSearchFrom}/><DateField calendar={cal} label="Through" value={searchTo} onChange={setSearchTo}/><div className="actions"><button className="primary">Search</button></div>
       </form>}
     </Dialog>}
+    {guide && <UserGuide topic={guide} onClose={() => {
+      setGuide(undefined)
+      if (helpOpener.current?.isConnected) helpOpener.current.focus()
+    }}/>}
   </>
 }
 
