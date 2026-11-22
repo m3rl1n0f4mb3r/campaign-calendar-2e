@@ -10,10 +10,11 @@ import { DateField } from './DateField'
 
 type Props = {
   calendar: Calendar; clock: number; holding: Holding; revision: string | null; selectedEvent?: string
+  help: () => void
   save: (holding: Holding) => Promise<boolean>; back: () => void; openReceipt: (month: TurnMonth) => void; reopen: (month: TurnMonth) => void
 }
 
-export function ConfidencePanel({ calendar, clock, holding, revision, selectedEvent, save, back, openReceipt, reopen }: Props) {
+export function ConfidencePanel({ calendar, clock, holding, revision, selectedEvent, save, back, openReceipt, reopen, help }: Props) {
   const state = holding.confidence ?? initialConfidence()
   const start = dateIndex(calendar, { ...holding.first, day: 1 })
   const due = nextReview(calendar, start, state)
@@ -130,7 +131,8 @@ export function ConfidencePanel({ calendar, clock, holding, revision, selectedEv
   const projected = confidenceBand(clampConfidence(clampConfidence(confidenceAt(state, checkDate) + change) + modifier))
 
   return <div className="form">
-    <h3>{holding.name} · Confidence and events</h3>
+    <div className="guide-context"><h3>{holding.name} · Confidence and events</h3>
+      <button type="button" onClick={help}>Help resolving events</button></div>
     <p><strong>{state.current} · {band.name}</strong> (base {state.base})</p>
     <p>{band.guidance}</p>
     {error && <p role="alert" className="error">{error}</p>}

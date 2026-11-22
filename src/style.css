@@ -151,3 +151,11 @@ dialog:has(.migration-grid) { width: min(900px, 94vw); }
 .ledger caption { caption-side: bottom; padding: .4rem .6rem; text-align: right; }
 .ledger tfoot { font-weight: 650; }
 @media (max-width: 600px) { .domain-fields { grid-template-columns: minmax(0, 1fr); } }
+
+.guide-context { display: flex; flex-wrap: wrap; gap: .5rem; align-items: baseline; justify-content: space-between; }
+.guide-dialog { width: min(720px, 94vw); }
+.guide-dialog section { margin-top: 1.25rem; }
+.guide-dialog h3 { font-size: 1.15rem; }
+.guide-dialog ol { padding-inline-start: 1.6rem; }
+.guide-dialog li + li { margin-top: .5rem; }
+@media (max-width: 420px) { .masthead { flex-wrap: wrap; } }
