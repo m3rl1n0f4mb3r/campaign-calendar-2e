@@ -3,6 +3,8 @@ import { dateLabel, displayYear } from './calendar'
 import { closingDay, dueMonth, formatGp, monthAt, territoryPopulation, previewTurn, recordTurn, reopenTurn, resourceRates, sameMonth, territoriesFor, territoryDefaults, replayInputs, turnEstimates, paymentLabels, availableEffects,
   type Holding, type LedgerLine, type Payment, type PaymentKind, type Receipt, type Territory, type TerritoryTurn, type TurnInputs, type TurnMonth } from './domain'
 import type { GuideTopic } from './UserGuide'
+import { ConstructionPanel } from './ConstructionPanel'
+import type { Project } from './construction'
 import { ConfidencePanel } from './ConfidencePanel'
 import type { Campaign } from './storage'
 
@@ -12,14 +14,16 @@ type Props = {
   revision: string | null
   receipt?: ReceiptLink
   dominionEvent?: { holdingId: string; id: string }
+  constructionProject?: { holdingId: string; projectId: string }
   save: (holdings: Holding[]) => Promise<boolean>
   help: (topic: GuideTopic) => void
   backup: () => void
 }
 type Screen =
+  | { type: 'construction'; id: string; projects: Project[]; selectedProject?: string; revision: Props['revision'] }
   | { type: 'confidence'; id: string; selectedEvent?: string }
   | { type: 'holding'; draft: Holding; revision: Props['revision'] }
-  | { type: 'preview'; id: string; month: TurnMonth; draft: TurnInputs; revision: Props['revision']; reset?: boolean }
+  | { type: 'preview'; id: string; month: TurnMonth; draft: TurnInputs; revision: Props['revision']; projects?: Project[]; reset?: boolean }
   | { type: 'receipt'; link: ReceiptLink }
   | { type: 'reopen'; link: ReceiptLink; revision: Props['revision'] }
 
@@ -173,8 +177,11 @@ function Ledger({ turn }: { turn: Receipt }) {
   </table></div>
 }
 
-export function DomainPanel({ campaign, revision, receipt, dominionEvent, save, backup, help }: Props) {
-  const [screen, setScreen] = useState<Screen | undefined>(receipt ? { type: 'receipt', link: receipt } : dominionEvent ? { type: 'confidence', id: dominionEvent.holdingId, selectedEvent: dominionEvent.id } : undefined)
+export function DomainPanel({ campaign, revision, receipt, dominionEvent, constructionProject, save, backup, help }: Props) {
+  const [screen, setScreen] = useState<Screen | undefined>(receipt ? { type: 'receipt', link: receipt } : dominionEvent ? { type: 'confidence', id: dominionEvent.holdingId, selectedEvent: dominionEvent.id }
+    : constructionProject ? { type: 'construction', id: constructionProject.holdingId, selectedProject: constructionProject.projectId,
+      projects: campaign.holdings?.find(item => item.id === constructionProject.holdingId)?.projects ?? [], revision }
+    : undefined)
   const [pending, setPending] = useState(false)
   const [error, setError] = useState('')
   const { calendar, current } = campaign
@@ -200,6 +207,26 @@ export function DomainPanel({ campaign, revision, receipt, dominionEvent, save, 
     opening: { cash: 0, noncash: 0 }, families: 0, tax: 100, services: 1000, resources: [], territories: [{ id: crypto.randomUUID(), name: 'Core territory', settlement: 'wilderness', families: 0, resources: [] }], turns: [], replay: [],
   } })
   const back = <button type="button" onClick={() => go()}>Back to holdings</button>
+
+  if (screen?.type === 'construction') {
+    const holding = holdings.find(item => item.id === screen.id)
+    if (!holding) return <div className="form"><p>This holding is no longer available.</p>{back}</div>
+    const changed = JSON.stringify(holding.projects ?? []) !== JSON.stringify(screen.projects)
+    return <div className="form">
+      <h3>{holding.name} · Construction projects</h3>
+      {stale ? <p className="warning" role="alert">Campaign data changed. Return to holdings and reopen construction.</p> : <>
+        <ConstructionPanel calendar={calendar} clock={current} holding={holding} projects={screen.projects}
+          selectedProject={screen.selectedProject} change={projects => setScreen({ ...screen, projects })}
+          help={() => help('track-construction')} backup={backup} openReceipt={month => {
+            if (!changed || window.confirm('Leave this project view and discard unsaved construction changes?')) {
+              go({ type: 'receipt', link: { holdingId: holding.id, month } })
+            }
+          }}/>
+      </>}
+      <div className="actions">{back}<button className="primary" disabled={pending || stale || !changed}
+        onClick={() => void persist({ ...holding, projects: screen.projects })}>Save construction changes</button></div>
+    </div>
+  }
 
   if (screen?.type === 'confidence') {
     const holding = holdings.find(item => item.id === screen.id)
@@ -262,8 +289,9 @@ export function DomainPanel({ campaign, revision, receipt, dominionEvent, save, 
   }
 
   if (screen?.type === 'preview') {
-    const holding = holdings.find(item => item.id === screen.id)
-    if (!holding) return <div className="form"><p>This holding is no longer available.</p>{back}</div>
+    const savedHolding = holdings.find(item => item.id === screen.id)
+    if (!savedHolding) return <div className="form"><p>This holding is no longer available.</p>{back}</div>
+    const holding = screen.projects ? { ...savedHolding, projects: screen.projects } : savedHolding
     const { draft, month } = screen
     const replay = screen.reset ? undefined : holding.replay.find(item => sameMonth(item.month, month))
     const saved = replay?.inputs.territories
@@ -349,7 +377,13 @@ export function DomainPanel({ campaign, revision, receipt, dominionEvent, save, 
           })}
           <div className="button-group"><button type="button" onClick={() => addLine('', 'cash')}>Add ledger entry</button><button type="button" onClick={() => addLine('Noncash expiration', 'noncash')}>Add expiration</button></div>
         </fieldset>
-        {availableEffects(holding, month).length > 0 && <fieldset className="form"><legend>Approved event and confidence effects</legend>
+        {!!holding.projects?.length && <ConstructionPanel calendar={calendar} clock={current} holding={holding}
+          projects={holding.projects} month={month} backup={backup} help={() => help('track-construction')}
+          change={projects => {
+            const allowed = new Set(availableEffects({ ...holding, projects }, month).map(effect => effect.id))
+            setScreen({ ...screen, projects, draft: { ...draft, effectIds: draft.effectIds?.filter(id => allowed.has(id)) } })
+          }}/>}
+        {availableEffects(holding, month).length > 0 && <fieldset className="form"><legend>Approved effects and project costs</legend>
           {availableEffects(holding, month).map(effect => <div key={effect.id}>
             <label className="check"><input type="checkbox" checked={draft.effectIds?.includes(effect.id) ?? false}
               onChange={e => change({ effectIds: e.target.checked ? [...(draft.effectIds ?? []), effect.id] : draft.effectIds?.filter(id => id !== effect.id) })}/>
@@ -444,6 +478,7 @@ export function DomainPanel({ campaign, revision, receipt, dominionEvent, save, 
         <p>Next turn closes {date(next)}.</p>
         <div className="button-group">
           <button onClick={() => startHolding(holding)}>Edit holding</button>
+          <button onClick={() => go({ type: 'construction', id: holding.id, projects: holding.projects ?? [], revision })}>Construction projects</button>
           <button onClick={() => go({ type: 'confidence', id: holding.id })}>Confidence and events</button>
           <button disabled={closingDay(calendar, next) > current} onClick={() => startPreview(holding)}>Preview turn</button>
         </div>

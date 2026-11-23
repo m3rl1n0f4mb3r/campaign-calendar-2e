@@ -1,3 +1,4 @@
+import { confirmedCompletion, constructionOutcome, forecast, projectSchema, validProjects } from './construction'
 import { z } from 'zod'
 import { dateIndex, dateParts, movePeriod, type Calendar } from './calendar'
 import { confidenceSchema, type DomainEffect } from './confidence'
@@ -48,6 +49,7 @@ export const holdingSchema = z.object({
   families: money, tax: money, services: money, resources: z.array(resource),
   territories: z.array(territory).min(1).refine(uniqueTerritories).optional(),
   confidence: confidenceSchema.optional(),
+  projects: z.array(projectSchema).optional(),
   liegeRate: rate.optional(), titheRate: rate.optional(), xpMode: xpMode.optional(),
   turns: z.array(receipt), replay: z.array(z.object({ month: monthSchema, inputs, xpAward: award.optional() })),
 })
@@ -141,9 +143,13 @@ function calculateTerritory(item: TerritoryTurn) {
   return { id: item.id, name: item.name, opening: item.families, rate, suggested, closing, production, resources }
 }
 
+function holdingEffects(holding: Holding) {
+  return [...(holding.confidence?.effects ?? []), ...(holding.projects ?? []).flatMap(project => project.costs)]
+}
+
 export function availableEffects(holding: Holding, month: TurnMonth) {
   const posted = new Set(holding.turns.flatMap(turn => turn.inputs.effectIds ?? []))
-  return holding.confidence?.effects.filter(effect => sameMonth(effect.target, month) && !posted.has(effect.id)) ?? []
+  return holdingEffects(holding).filter(effect => sameMonth(effect.target, month) && !posted.has(effect.id))
 }
 
 function approvedEffects(values: TurnInputs, holding?: Holding, month?: TurnMonth) {
@@ -289,9 +295,13 @@ export function validHoldings(cal: Calendar, holdings: Holding[]) {
           if (!sources.has(effect.source)) return false
           closingDay(cal, effect.target)
         }
-        const postedEffects = holding.turns.flatMap(turn => turn.inputs.effectIds ?? [])
-        if (new Set(postedEffects).size !== postedEffects.length || postedEffects.some(id => !state.effects.some(effect => effect.id === id))) return false
       }
+      if (!validProjects(cal, holding.projects ?? [])) return false
+      const effects = holdingEffects(holding)
+      if (new Set(effects.map(item => item.id)).size !== effects.length) return false
+      for (const effect of effects) closingDay(cal, effect.target)
+      const postedEffects = holding.turns.flatMap(turn => turn.inputs.effectIds ?? [])
+      if (new Set(postedEffects).size !== postedEffects.length || postedEffects.some(id => !effects.some(effect => effect.id === id))) return false
       return [...holding.turns, ...holding.replay].every(({ month }) => {
         const day = closingDay(cal, month)
         if (day <= last) return false
@@ -318,4 +328,22 @@ export function dominionEntries(holdings: Holding[], from: number, to: number, q
     .filter(event => event.status !== 'removed' && event.day >= from && event.day < to &&
       [event.title, event.notes, holding.name].some(value => value.toLowerCase().includes(needle)))
     .map(event => ({ ...event, holdingId: holding.id })))
+}
+
+export function constructionEntries(cal: Calendar, holdings: Holding[], from: number, to: number, query = '') {
+  const needle = query.trim().toLowerCase()
+  return holdings.flatMap(holding => (holding.projects ?? []).flatMap(project => {
+    const done = confirmedCompletion(project)
+    return [
+      { id: 'start', day: project.start, label: 'Construction start' },
+      { id: 'finish', day: done ?? forecast(cal, project), label: done !== undefined ? 'Construction completed' : 'Construction forecast' },
+      { id: 'target', day: project.target, label: 'Construction target' },
+      ...project.reviews.filter(review => review.incident !== undefined && review.roll !== undefined).map(review =>
+        ({ id: review.id, day: review.incident, label: constructionOutcome(review.roll!).title })),
+    ].flatMap(({ id, day, label }) => {
+      const title = `${project.name} · ${label}`
+      if (day === undefined || day < from || day >= to || ![holding.name, title, project.notes].some(value => value.toLowerCase().includes(needle))) return []
+      return [{ id, day, title, holdingId: holding.id, projectId: project.id }]
+    })
+  }))
 }

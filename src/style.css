@@ -159,3 +159,6 @@ dialog:has(.migration-grid) { width: min(900px, 94vw); }
 .guide-dialog ol { padding-inline-start: 1.6rem; }
 .guide-dialog li + li { margin-top: .5rem; }
 @media (max-width: 420px) { .masthead { flex-wrap: wrap; } }
+
+.construction-heading { display: flex; align-items: baseline; justify-content: space-between; gap: .5rem; flex-wrap: wrap; }
+.construction-heading h4 { margin: 0; }
