@@ -4,6 +4,7 @@ const topics = {
   'get-started': 'Get started',
   'close-a-turn': 'Close a domain turn',
   'resolve-a-disaster': 'Resolve a disaster and apply its effect',
+  'track-construction': 'Track castle construction',
   'reopen-a-turn': 'Reopen and replay a turn',
 }
 
@@ -55,7 +56,7 @@ export function UserGuide({ topic, onClose }: { topic: GuideTopic; onClose: () =
         <li>Open the holding’s <strong>Confidence and events</strong> panel. Select <strong>Schedule event</strong>, enter the earthquake and its date, check <strong>Natural disaster</strong>, and save.</li>
         <li>When the campaign clock reaches the event date, open the event and select <strong>Resolve event</strong>, then <strong>Review confidence</strong>. A <strong>One-check modifier</strong> applies only to that check. Use <strong>Lasting change</strong> to change the holding’s score. For a standalone monthly adjustment, select <strong>Add confidence check or adjustment</strong> and choose the <strong>Monthly adjustment</strong> trigger.</li>
         <li>Under <strong>Financial effects</strong>, choose the resolved event or its confidence check as the source. For a lost harvest, select <strong>Resource income</strong> and <strong>Noncash</strong>, then enter a negative amount. Choose the target month and select <strong>Approve effect for turn</strong>. If the target month is already closed, you can use the next unresolved turn.</li>
-        <li>When the target turn is due, select the effect under <strong>Approved event and confidence effects</strong>. Check the updated ledger and record the turn to post it.</li>
+        <li>When the target turn is due, select the effect under <strong>Approved effects and project costs</strong>. Check the updated ledger and record the turn to post it.</li>
       </ol>
     </section>
     <section aria-labelledby="reopen-a-turn" hidden={topic !== 'get-started' && topic !== 'reopen-a-turn'}>
@@ -66,6 +67,17 @@ export function UserGuide({ topic, onClose }: { topic: GuideTopic; onClose: () =
         <li>Use <strong>Download backup</strong> if you want to save the current state. Select <strong>Confirm reopen</strong> to clear the affected receipts and their calendar entries.</li>
         <li>Preview each reopened month in order once it is due. The preview starts with the original inputs and recalculates opening balances from the current ledger. <strong>Reset to current defaults</strong> uses the holding’s current settings.</li>
         <li>Review prior approvals. Payments, XP, and event effects need fresh approval. The event and confidence check remain recorded separately. Record the turn to replace its receipt.</li>
+      </ol>
+    </section>
+    <section aria-labelledby="track-construction" hidden={topic !== 'get-started' && topic !== 'track-construction'}>
+      <h3 id="track-construction" tabIndex={-1}>{topics['track-construction']}</h3>
+      <p>For example, start a Greyhawk project during Growfest and review a weather delay when work begins in Planting.</p>
+      <ol>
+        <li>Open the holding’s <strong>Construction projects</strong> and choose <strong>Add project</strong>. Set the start to Growfest 1, enter the budget and required weeks, and leave <strong>Festival pace</strong> at <strong>No work</strong>. Apply the settings and choose <strong>Save construction changes</strong>. Review the forecast starting in Planting.</li>
+        <li>Set the clock to the first scheduled workday in Planting. Open <strong>Review project</strong>. Roll or enter a d100 result, or choose <strong>Skip review</strong>. A result of 70 offers a weather stoppage. Approve it if it applies, record the review, and save the construction changes.</li>
+        <li>At month-end, open <strong>Preview turn</strong> and find the <strong>Construction</strong> section. The saved review appears in its project. Approve any work actually completed through the closing date. A full-month stoppage normally means no scheduled work is credited.</li>
+        <li>Use <strong>Queue construction cost</strong> to add a proposed expense. Select it under <strong>Approved effects and project costs</strong> and record the turn. The project shows it as posted after confirmation.</li>
+        <li>Reopening the domain turn retains the project’s work and event history. Select the proposed cost again if it still applies. Use the separate project reopen controls to correct a work entry or review.</li>
       </ol>
     </section>
   </dialog>

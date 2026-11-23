@@ -1,6 +1,7 @@
 import { dateIndex, dateLabel, dateParts, moonPhase, mod, phaseNames, weekday, type Calendar } from './calendar'
 import { dayOf, hasOccurrence, minutes, occurrences, type EventData } from './events'
 import type { Campaign } from './storage'
+import { forecast, validProjects } from './construction'
 import { yearStart } from './confidence'
 import { closingDay, dueMonth, validHoldings, type TurnMonth } from './domain'
 
@@ -78,8 +79,41 @@ export function migrate(campaign: Campaign, next: Calendar) {
     } else {
       errors.push(`${holding.name} would have an invalid first month, or reordered domain turns.`)
     }
+    const projects = holding.projects?.map(project => {
+      const label = (description: string) => `${project.name} ${description}`
+      const mapRange = (range: typeof project.stops[number]) => ({
+        ...range, from: day(range.from, label('schedule start')),
+        through: range.through === undefined ? undefined : day(range.through, label('schedule end')),
+      })
+      const mapReview = (review: typeof project.reviews[number]) => {
+        compareMonth(label('monthly review'), review.month)
+        return { ...review, incident: review.incident === undefined ? undefined : day(review.incident, label('incident')) }
+      }
+      for (const cost of project.costs) compareMonth(label('cost target'), cost.target)
+      const moved = {
+        ...project, start: day(project.start, label('start')),
+        target: project.target === undefined ? undefined : day(project.target, label('completion target')),
+        canceled: project.canceled === undefined ? undefined : day(project.canceled, label('cancellation')),
+        progress: project.progress.map(work => ({ ...work, day: day(work.day, label('approved work')) })),
+        stops: project.stops.map(mapRange), festivalOverrides: project.festivalOverrides.map(mapRange),
+        reviews: project.reviews.map(mapReview), reopened: project.reopened.map(mapReview),
+      }
+      try {
+        if (!validProjects(next, [moved]) || moved.progress.some((work, index) => index > 0 && work.day <= moved.progress[index - 1].day)) {
+          errors.push(`${project.name} has overlapping, reordered, or invalid construction records after migration.`)
+        }
+        if (!errors.length) {
+          const before = forecast(old, project)
+          const after = forecast(next, moved)
+          if (before !== undefined && after !== undefined) changeDate(before, after, label('completion forecast'))
+          else if (before !== after) changes.push(`${label('completion forecast')}: ${before === undefined ? 'Paused' : dateLabel(old, before)} → ${after === undefined ? 'Paused' : dateLabel(next, after)}`)
+        }
+      } catch { errors.push(`${project.name} has a construction record in a removed period.`) }
+      return moved
+    })
+    const projectHolding = projects ? { ...holding, projects } : holding
     const state = holding.confidence
-    if (!state) return holding
+    if (!state) return projectHolding
     const annualDate = (value: number, year: number, label: string) => {
       const proposed = yearStart(next, year)
       changeDate(value, proposed, label)
@@ -98,7 +132,7 @@ export function migrate(campaign: Campaign, next: Calendar) {
       events: state.events.map(event => ({ ...event, day: day(event.day, event.title),
         resolvedDay: event.resolvedDay === undefined ? undefined : day(event.resolvedDay, `${event.title} resolution`) })),
     }
-    return { ...holding, confidence }
+    return { ...projectHolding, confidence }
   })
   if (!errors.length && events.some(event => event.rule)) {
     const before = occurrences(old, campaign.events.filter(event => event.rule), campaign.current, campaign.current + 30)

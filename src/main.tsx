@@ -9,7 +9,7 @@ import { DateField } from './DateField'
 import { EventEditor, type Scope } from './EventEditor'
 import { UserGuide, type GuideTopic } from './UserGuide'
 import { DomainPanel, type ReceiptLink } from './DomainPanel'
-import { dominionEntries, turnEntries } from './domain'
+import { constructionEntries, dominionEntries, turnEntries } from './domain'
 import { CalendarEditor } from './CalendarEditor'
 import './style.css'
 
@@ -56,6 +56,7 @@ function App() {
   const [view, setView] = useState<View>('Month')
   const [showMoons, setShowMoons] = useState(false)
   const [panel, setPanel] = useState<Panel>()
+  const [constructionProject, setConstructionProject] = useState<{ holdingId: string; projectId: string }>()
   const [dominionEvent, setDominionEvent] = useState<{ holdingId: string; id: string }>()
   const [receipt, setReceipt] = useState<ReceiptLink>()
   const [editing, setEditing] = useState<Occurrence>()
@@ -137,7 +138,7 @@ function App() {
   function open(next: Panel) {
     setPanel(next)
     setDraftDate(next === 'clock' ? campaign.current : selected)
-    if (next === 'domains') { setReceipt(undefined); setDominionEvent(undefined) }
+    if (next === 'domains') { setReceipt(undefined); setDominionEvent(undefined); setConstructionProject(undefined) }
     if (next === 'new') { setCampaignName(''); setPreset('generic') }
     if (next === 'search') { setSearchFrom(selected); setSearchTo(selected + 29) }
   }
@@ -195,6 +196,7 @@ function App() {
       entries.push({
         key: entryKey, start: entry.day * minutes, end: (entry.day + 1) * minutes,
         render: (_, compact = false) => <button key={entryKey} className={compact ? 'event-chip domain-event' : 'event-item domain-event'} onClick={() => {
+          setConstructionProject(undefined)
           setDominionEvent(undefined)
           setReceipt(entry)
           setPanel('domains')
@@ -206,9 +208,21 @@ function App() {
       entries.push({ key: entryKey, start: entry.day * minutes, end: (entry.day + 1) * minutes,
         render: (_, compact = false) => <button key={entryKey} className={compact ? 'event-chip domain-event' : 'event-item domain-event'} onClick={() => {
           setReceipt(undefined)
+          setConstructionProject(undefined)
           setDominionEvent(entry)
           setPanel('domains')
         }}><span>{entry.title}</span>{!compact && <small>Dominion event · {entry.status}</small>}</button>,
+      })
+    }
+    for (const entry of constructionEntries(cal, campaign.holdings ?? [], start, end, term)) {
+      const entryKey = `construction:${entry.holdingId}:${entry.projectId}:${entry.id}`
+      entries.push({ key: entryKey, start: entry.day * minutes, end: (entry.day + 1) * minutes,
+        render: (_, compact = false) => <button key={entryKey} className={compact ? 'event-chip domain-event' : 'event-item domain-event'} onClick={() => {
+          setReceipt(undefined)
+          setDominionEvent(undefined)
+          setConstructionProject(entry)
+          setPanel('domains')
+        }}><span>{entry.title}</span></button>,
       })
     }
     return entries.sort((a, b) => a.start - b.start)
@@ -301,7 +315,7 @@ function App() {
     </main>
     {panel && <Dialog key={panel} title={dialogTitle[panel]} close={close}>
       {error && <p role="alert" className="error">{error}</p>}
-      {panel === 'domains' && <DomainPanel campaign={campaign} revision={raw} receipt={receipt} dominionEvent={dominionEvent} help={openGuide} backup={backup} save={holdings => saveCampaign({ ...campaign, holdings })}/>}
+      {panel === 'domains' && <DomainPanel campaign={campaign} revision={raw} receipt={receipt} dominionEvent={dominionEvent} constructionProject={constructionProject} help={openGuide} backup={backup} save={holdings => saveCampaign({ ...campaign, holdings })}/>}
       {panel === 'event' && <EventEditor calendar={cal} day={selected} event={editing} save={saveEvent} close={close}/>}
       {panel === 'calendar' && <CalendarEditor campaign={campaign} close={close} backup={backup} save={async next => {
         if (await saveCampaign(next)) { setSelected(next.current); setSearch(undefined); close() }

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { dateIndex, dateLabel, dateParts, moonPhase, movePeriod, phaseNames, weekday, yearLabel } from './calendar'
 import { minutes, occurrences } from './events'
-import { dominionEntries, turnEntries } from './domain'
+import { constructionEntries, dominionEntries, turnEntries } from './domain'
 import type { migrate } from './migration'
 import type { Campaign } from './storage'
 
@@ -28,6 +28,7 @@ export function MigrationCalendar({ original, preview }: { original: Campaign; p
   const showEvents = side === 'before' || preview.errors.length === 0
   const events = showEvents ? occurrences(cal, campaign.events, first, first + period.days) : []
   const dominion = showEvents ? dominionEntries(campaign.holdings ?? [], first, first + period.days) : []
+  const construction = showEvents ? constructionEntries(cal, campaign.holdings ?? [], first, first + period.days) : []
   const turns = showEvents ? turnEntries(cal, campaign.holdings ?? [], first, first + period.days) : []
 
   function switchSide(next: 'before' | 'after') {
@@ -64,6 +65,8 @@ export function MigrationCalendar({ original, preview }: { original: Campaign; p
             <div className="event-chip" key={`${event.series.id}:${event.original}`} title={event.title} style={{ borderLeftColor: event.color }}><span>{event.title}</span></div>)}
           {dominion.filter(event => event.day === day).map(event =>
             <div className="event-chip domain-event" key={`dominion:${event.holdingId}:${event.id}`} title={event.title}><span>{event.title}</span></div>)}
+          {construction.filter(entry => entry.day === day).map(entry =>
+            <div className="event-chip domain-event" key={`construction:${entry.holdingId}:${entry.projectId}:${entry.id}`} title={entry.title}><span>{entry.title}</span></div>)}
           {turns.filter(turn => turn.day === day).map(turn =>
             <div className="event-chip domain-event" key={`turn:${turn.holdingId}`} title={turn.title}><span>{turn.title}</span></div>)}
         </div>
