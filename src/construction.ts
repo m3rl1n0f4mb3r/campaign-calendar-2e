@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { dateIndex, dateParts, type Calendar } from './calendar'
+import { estimateSnapshotSchema, type EstimateSnapshot } from './estimate'
 import type { TurnMonth } from './domain'
 
 const id = z.string().min(1).max(120)
@@ -20,7 +21,7 @@ const cost = z.object({
 export const projectSchema = z.object({
   id, name: z.string().trim().min(1).max(120), start: day, target: day.optional(), notes: z.string(),
   workWeek: z.number().int().min(1).max(366), workDays: days, budget: z.number().int().safe().nonnegative(),
-  workWeekLocked: z.boolean().optional(),
+  workWeekLocked: z.boolean().optional(), estimates: z.array(estimateSnapshotSchema).optional(),
   festivalPace: pace, festivalOverrides: z.array(range), stops: z.array(range),
   progress: z.array(z.object({ day, pace })), reviews: z.array(review), reopened: z.array(review),
   costs: z.array(cost), canceled: day.optional(),
@@ -211,4 +212,11 @@ const outcomes = [
 export function constructionOutcome(roll: number) {
   const [, title, guidance] = outcomes.find(([maximum]) => roll <= maximum) ?? outcomes.at(-1)!
   return { title, guidance }
+}
+
+export function applyProjectEstimate(project: Project, snapshot: EstimateSnapshot): Project {
+  if (project.canceled !== undefined) throw new Error('Choose a project that has not been canceled.')
+  if (project.workWeek !== snapshot.workWeek) throw new Error('The estimate must use the project’s stored work-week length.')
+  return projectSchema.parse({ ...project, budget: snapshot.budget, workDays: snapshot.workDays,
+    estimates: [...(project.estimates ?? []), snapshot] })
 }

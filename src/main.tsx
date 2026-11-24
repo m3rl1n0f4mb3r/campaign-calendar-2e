@@ -7,6 +7,7 @@ import { deleteActiveCampaign, exportCampaign, key, newCampaign, parseCampaignBa
 import { dragonlance, greyhawk, lanceSource } from './presets'
 import { DateField } from './DateField'
 import { EventEditor, type Scope } from './EventEditor'
+import { EstimatePanel } from './EstimatePanel'
 import { UserGuide, type GuideTopic } from './UserGuide'
 import { DomainPanel, type ReceiptLink } from './DomainPanel'
 import { constructionEntries, dominionEntries, turnEntries } from './domain'
@@ -14,7 +15,7 @@ import { CalendarEditor } from './CalendarEditor'
 import './style.css'
 
 type View = 'Month' | 'Week' | 'Day' | 'Agenda'
-type Panel = 'new' | 'calendar' | 'event' | 'jump' | 'clock' | 'data' | 'delete' | 'search' | 'domains'
+type Panel = 'new' | 'calendar' | 'event' | 'jump' | 'clock' | 'data' | 'delete' | 'search' | 'domains' | 'estimates'
 const views: View[] = ['Month', 'Week', 'Day', 'Agenda']
 
 function initialize() {
@@ -70,7 +71,7 @@ function App() {
   const restoreRequest = useRef(0)
   const [preset, setPreset] = useState('generic')
   const [campaignName, setCampaignName] = useState('')
-  const dialogTitle = { new: 'New campaign', calendar: 'Calendar settings', event: editing ? 'Edit event' : 'New event', jump: 'Jump to date', clock: 'Set campaign date', data: 'Campaign data', delete: 'Delete campaign', search: 'Search events', domains: 'Domain Play' }
+  const dialogTitle = { new: 'New campaign', calendar: 'Calendar settings', event: editing ? 'Edit event' : 'New event', jump: 'Jump to date', clock: 'Set campaign date', data: 'Campaign data', delete: 'Delete campaign', search: 'Search events', domains: 'Domain Play', estimates: 'Castle estimates' }
 
   function syncSaved(value: string | null) {
     setRaw(value)
@@ -250,7 +251,7 @@ function App() {
   return <>
     <header className="masthead">
       <div className="brand"><span aria-hidden="true">◈</span> Campaign Calendar</div>
-      <div className="header-actions"><button onClick={() => openGuide('get-started')}>Help</button><button onClick={() => open('search')}>Search</button><button onClick={() => open('data')}>Data</button></div>
+      <div className="header-actions"><button onClick={() => open('estimates')}>Castle estimates</button><button onClick={() => openGuide('get-started')}>Help</button><button onClick={() => open('search')}>Search</button><button onClick={() => open('data')}>Data</button></div>
     </header>
     {error && <p role="alert" className="error global-error">{error}</p>}
     <main className="layout">
@@ -315,6 +316,7 @@ function App() {
     </main>
     {panel && <Dialog key={panel} title={dialogTitle[panel]} close={close}>
       {error && <p role="alert" className="error">{error}</p>}
+      {panel === 'estimates' && <EstimatePanel campaign={campaign} save={saveCampaign} help={() => openGuide('estimate-construction')}/>}
       {panel === 'domains' && <DomainPanel campaign={campaign} revision={raw} receipt={receipt} dominionEvent={dominionEvent} constructionProject={constructionProject} help={openGuide} backup={backup} save={holdings => saveCampaign({ ...campaign, holdings })}/>}
       {panel === 'event' && <EventEditor calendar={cal} day={selected} event={editing} save={saveEvent} close={close}/>}
       {panel === 'calendar' && <CalendarEditor campaign={campaign} close={close} backup={backup} save={async next => {

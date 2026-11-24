@@ -20,7 +20,7 @@ p { margin: .35rem 0; }
 .masthead { background: #18271f; color: #fffcf2; padding: .85rem clamp(1rem, 3vw, 3rem); display: flex; justify-content: space-between; align-items: center; gap: .75rem; }
 .brand { font: 1.35rem Georgia, serif; }
 .brand span { color: #d7b878; margin-right: .4rem; }
-.header-actions { display: flex; gap: .5rem; }
+.header-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
 .header-actions button { color: inherit; background: transparent; border-color: #536357; }
 .header-actions button:hover { background: #34473b; }
 .layout { max-width: 1680px; margin: auto; display: grid; grid-template-columns: 190px minmax(0, 1fr) 220px; gap: 1.4rem; padding: 1.6rem clamp(1rem, 3vw, 3rem); align-items: start; }
