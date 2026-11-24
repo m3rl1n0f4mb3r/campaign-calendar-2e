@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { dateLabel, type Calendar } from './calendar'
 import { DateField } from './DateField'
 import { applyProjectEstimate, confirmedCompletion, forecast, newProject, requiredWork, type Project, type WorkPace, type WorkRange } from './construction'
@@ -67,6 +67,9 @@ export function EstimatePanel({ campaign, save, help }: Props) {
   const [draft, setDraft] = useState<Estimate>()
   const [moduleEdit, setModuleEdit] = useState<CastleModule>()
   const [catalogQuery, setCatalogQuery] = useState('')
+  const [reorderMenu, setReorderMenu] = useState<string>()
+  const [dropTarget, setDropTarget] = useState<string>()
+  const draggedModule = useRef<string>(undefined)
   const [moduleId, setModuleId] = useState('')
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -82,6 +85,7 @@ export function EstimatePanel({ campaign, save, help }: Props) {
 
   const catalog = useMemo(() => campaign.castleCatalog ?? defaultCatalog(), [campaign.castleCatalog])
   const filtered = catalog.filter(item => item.name.toLowerCase().includes(catalogQuery.trim().toLowerCase()))
+  const canReorder = !catalogQuery.trim() && !busy
   const holdings = campaign.holdings ?? []
   const holding = holdings.find(item => item.id === holdingId) ?? holdings[0]
   const eligible = holding?.projects?.filter(item => item.canceled === undefined) ?? []
@@ -109,6 +113,15 @@ export function EstimatePanel({ campaign, save, help }: Props) {
       if (saved) setNotice(message)
       return saved
     } finally { setBusy(false) }
+  }
+  const saveCatalog = (entries: CastleModule[], message: string) => persist({ ...campaign, castleCatalog: entries }, message)
+  async function moveModule(id: string, destination: number) {
+    const from = catalog.findIndex(item => item.id === id)
+    if (!canReorder || from < 0 || destination < 0 || destination >= catalog.length || from === destination) return
+    const next = [...catalog]
+    const [module] = next.splice(from, 1)
+    next.splice(destination, 0, module)
+    await saveCatalog(next, `${module.name} moved to position ${destination + 1}.`)
   }
   const draftList = (value: Estimate) => {
     const previous = campaign.castleEstimates ?? []
@@ -175,15 +188,66 @@ export function EstimatePanel({ campaign, save, help }: Props) {
         const entry = original?.source.startsWith('The Castle Guide') && JSON.stringify(original) !== JSON.stringify(parsed.data)
           ? { ...parsed.data, source: 'Campaign override of The Castle Guide, pp. 54–58' } : parsed.data
         const next = original ? catalog.map(item => item.id === entry.id ? entry : item) : [...catalog, entry]
-        if (await persist({ ...campaign, castleCatalog: next }, 'Campaign catalog saved.')) setModuleEdit(undefined)
+        if (await saveCatalog(next, 'Campaign catalog saved.')) setModuleEdit(undefined)
       }}>Save catalog entry</button></div>
     </div> : <>
       <label>Filter modules<input type="search" value={catalogQuery} onChange={e => setCatalogQuery(e.target.value)}/></label>
       <p>{filtered.length} of {catalog.length} modules</p>
-      {filtered.map(item => <div key={item.id} className="construction-heading">
-        <span>{item.name} · {formatGp(item.cost)} · {item.labor / 100} worker-weeks</span>
-        <button onClick={() => { setModuleEdit(item); idle() }}>Edit {item.name}</button>
-      </div>)}
+      {!!catalogQuery.trim() && <p className="muted">Clear the filter to reorder modules.</p>}
+      <ul className="catalog-list">{filtered.map(item => {
+        const index = catalog.findIndex(module => module.id === item.id)
+        return <li key={item.id} className={dropTarget === item.id ? 'catalog-drop-target' : undefined}
+          onDragOver={event => {
+            if (!canReorder || !draggedModule.current || draggedModule.current === item.id) return
+            event.preventDefault()
+            event.dataTransfer.dropEffect = 'move'
+            setDropTarget(item.id)
+          }}
+          onDrop={event => {
+            event.preventDefault()
+            const source = draggedModule.current
+            draggedModule.current = undefined
+            setDropTarget(undefined)
+            if (source) void moveModule(source, index)
+          }}>
+          <div className="catalog-row">
+            <button type="button" className="catalog-icon catalog-grip" disabled={!canReorder}
+              aria-label={`Reorder ${item.name}`} title="Drag to reorder or click for move controls"
+              aria-expanded={reorderMenu === item.id && canReorder} draggable={canReorder}
+              onClick={() => setReorderMenu(reorderMenu === item.id ? undefined : item.id)}
+              onKeyDown={event => {
+                if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return
+                event.preventDefault()
+                void moveModule(item.id, index + (event.key === 'ArrowUp' ? -1 : 1))
+              }}
+              onDragStart={event => {
+                if (!canReorder) { event.preventDefault(); return }
+                draggedModule.current = item.id
+                event.dataTransfer.effectAllowed = 'move'
+                event.dataTransfer.setData('text/plain', item.id)
+              }}
+              onDragEnd={() => { draggedModule.current = undefined; setDropTarget(undefined) }}>
+              <span aria-hidden="true">⠿</span>
+            </button>
+            <div className="catalog-description">
+              <strong>{item.name}</strong>
+              <small>{formatGp(item.cost)} · {item.labor / 100} worker-weeks</small>
+            </div>
+            <button type="button" className="catalog-icon" aria-label={`Edit ${item.name}`} title={`Edit ${item.name}`}
+              onClick={() => { setModuleEdit(item); idle() }}><span aria-hidden="true">✎</span></button>
+            <button type="button" className="catalog-icon danger" aria-label={`Remove ${item.name}`} title={`Remove ${item.name}`}
+              onClick={() => {
+                if (window.confirm(`Remove ${item.name} from this campaign’s catalog? Existing estimates will keep their copy.`)) {
+                  void saveCatalog(catalog.filter(module => module.id !== item.id), `${item.name} removed from the campaign catalog.`)
+                }
+              }}><span aria-hidden="true">🗑︎</span></button>
+          </div>
+          {reorderMenu === item.id && canReorder && <div className="catalog-move-actions button-group">
+            <button type="button" disabled={index === 0} onClick={() => void moveModule(item.id, index - 1)}>Move earlier</button>
+            <button type="button" disabled={index === catalog.length - 1} onClick={() => void moveModule(item.id, index + 1)}>Move later</button>
+          </div>}
+        </li>
+      })}</ul>
     </>}
   </fieldset>
 
