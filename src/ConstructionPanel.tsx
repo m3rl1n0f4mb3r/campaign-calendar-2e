@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { dateLabel, dateParts, type Calendar } from './calendar'
+import { EstimateHistory } from './EstimatePanel'
 import { DateField } from './DateField'
 import { rollDie } from './confidence'
 import { closingDay, dueMonth, formatGp, monthAt, sameMonth, type Holding, type TurnMonth } from './domain'
@@ -56,6 +57,7 @@ export function ConstructionPanel({ calendar, clock, holding, projects, change, 
         </button>
       </div></div>
       <ProjectSummary calendar={calendar} clock={clock} holding={holding} project={project}/>
+      {!month && <EstimateHistory snapshots={project.estimates} calendar={calendar}/>}
       {expanded === project.id && <ProjectWork calendar={calendar} clock={clock} holding={holding} project={project}
         month={month} update={update} backup={backup} openReceipt={openReceipt}/>}
     </section>)}
@@ -67,22 +69,24 @@ function ProjectSettings({ calendar, project, change, cancel, finish }: {
 }) {
   const edit = (patch: Partial<Project>) => change({ ...project, ...patch })
   const locked = project.workWeekLocked || project.progress.length > 0
+  const estimated = !!project.estimates?.length
   return <fieldset className="form"><legend>Project settings</legend>
     <label>Project name<input maxLength={120} value={project.name} onChange={e => edit({ name: e.target.value })}/></label>
     {locked || project.reviews.length > 0 || project.reopened.length > 0
       ? <p>Project start: {dateLabel(calendar, project.start)}</p>
       : <DateField calendar={calendar} label="Project start" value={project.start} onChange={start => edit({ start })}/>}
     <div className="domain-fields">
-      <label>Budget (gp)<input type="number" min="0" step=".01" value={project.budget / 100}
+      <label>Budget (gp)<input type="number" min="0" step=".01" disabled={estimated} value={project.budget / 100}
         onChange={e => edit({ budget: Math.round(Number(e.target.value) * 100) })}/></label>
-      <label>Work days per week<input type="number" min="1" max="366" step="1" disabled={locked}
+      <label>Work days per week<input type="number" min="1" max="366" step="1" disabled={locked || estimated}
         value={project.workWeek} onChange={e => {
           const workWeek = Number(e.target.value)
           if (workWeek > 0) edit({ workWeek, workDays: project.workDays / project.workWeek * workWeek })
         }}/></label>
-      <label>Required work weeks<input type="number" min="1" step="1" disabled={locked} value={project.workDays / project.workWeek}
+      <label>Required work weeks<input type="number" min="1" step="1" disabled={locked || estimated} value={project.workDays / project.workWeek}
         onChange={e => edit({ workDays: Number(e.target.value) * project.workWeek })}/></label>
     </div>
+    {estimated && <p className="muted">Use Castle estimates to revise this project’s budget or work duration.</p>}
     <label>Festival pace<select value={project.festivalPace} onChange={e => edit({ festivalPace: Number(e.target.value) as WorkPace })}>{paceOptions}</select></label>
     <label className="check"><input type="checkbox" checked={project.target !== undefined}
       onChange={e => edit({ target: e.target.checked ? project.start : undefined })}/> Set a completion target</label>

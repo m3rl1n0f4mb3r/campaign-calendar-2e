@@ -4,6 +4,7 @@ const topics = {
   'get-started': 'Get started',
   'close-a-turn': 'Close a domain turn',
   'resolve-a-disaster': 'Resolve a disaster and apply its effect',
+  'estimate-construction': 'Estimate a castle project',
   'track-construction': 'Track castle construction',
   'reopen-a-turn': 'Reopen and replay a turn',
 }
@@ -78,6 +79,16 @@ export function UserGuide({ topic, onClose }: { topic: GuideTopic; onClose: () =
         <li>At month-end, open <strong>Preview turn</strong> and find the <strong>Construction</strong> section. The saved review appears in its project. Approve any work actually completed through the closing date. A full-month stoppage normally means no scheduled work is credited.</li>
         <li>Use <strong>Queue construction cost</strong> to add a proposed expense. Select it under <strong>Approved effects and project costs</strong> and record the turn. The project shows it as posted after confirmation.</li>
         <li>Reopening the domain turn retains the project’s work and event history. Select the proposed cost again if it still applies. Use the separate project reopen controls to correct a work entry or review.</li>
+      </ol>
+    </section>
+    <section aria-labelledby="estimate-construction" hidden={topic !== 'get-started' && topic !== 'estimate-construction'}>
+      <h3 id="estimate-construction" tabIndex={-1}>{topics['estimate-construction']}</h3>
+      <ol>
+        <li>Open <strong>Castle estimates → New estimate</strong>. Choose <strong>Stone wall</strong>, select <strong>Add module line</strong>, and set <strong>Quantity</strong> to 2. The default estimate is 1,100 gp and 66 worker-weeks after standard finish and overhead.</li>
+        <li>Choose a <strong>Finish</strong> and review the seven <strong>Site Production Modifier</strong> factors. Changing a factor recalculates cost and labor. If you enter an override, note the reason.</li>
+        <li>Enter the crew’s <strong>Approved continuous work duration (weeks)</strong>. Worker-weeks show the labor required. The duration is the time the crew needs working continuously. The forecast applies the project’s week length, festival pace, and closures.</li>
+        <li>Select <strong>Save estimate draft</strong> to continue later, or <strong>Review project handoff</strong>. Choose a holding and create a project or revise an existing one. A revision shows the new budget, remaining work, and forecast. Confirm any completion change before applying it.</li>
+        <li>Use <strong>Manage module catalog</strong> to edit or add campaign modules. Use <strong>Remove line</strong> and add the module again to bring an existing draft line up to date. Approved estimates are available under <strong>Approved estimate history</strong> in the project.</li>
       </ol>
     </section>
   </dialog>
