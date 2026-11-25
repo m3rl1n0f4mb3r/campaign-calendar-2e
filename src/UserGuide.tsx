@@ -35,15 +35,16 @@ export function UserGuide({ topic, onClose }: { topic: GuideTopic; onClose: () =
     </header>
     <section aria-labelledby="get-started" hidden={topic !== 'get-started'}>
       <h3 id="get-started" tabIndex={-1}>{topics['get-started']}</h3>
-      <p>Choose <strong>New campaign</strong> to start with a calendar template. Select a date on the grid, then select its <strong>+</strong> or use <strong>New event</strong> to schedule something on that date.</p>
-      <p>Browsing the calendar leaves campaign time where it is. Use <strong>Set date</strong> or <strong>Advance one day</strong> in the sidebar to change the campaign clock. Select <strong>Campaign date</strong> in the calendar toolbar to return to it.</p>
-      <p>Use <strong>Data</strong> to download a backup of the active campaign. Restoring a backup replaces the campaign selected in the app, including its events, holdings, and turn history.</p>
+      <p>Choose <strong>Campaign → New campaign</strong> to start with a calendar template. Select a date on the grid, then select its <strong>+</strong> or use <strong>New event</strong> to schedule something on that date.</p>
+      <p>Browsing the calendar leaves campaign time where it is. Select the dated button in the calendar toolbar to jump back to the campaign date. Open <strong>Campaign clock options</strong> beside it for <strong>Set date</strong> or <strong>Advance one day</strong>.</p>
+      <p>Open <strong>Campaign → Calendar settings → Moons</strong> to control whether moon phases appear on the calendar. Use <strong>Campaign → Print</strong> to print the current view or a range of months and festivals, with your choice of event types and moon phases.</p>
+      <p>Use <strong>Campaign → Backups and data</strong> to download a backup of the active campaign. Restoring a backup replaces the campaign selected in the app, including its events, holdings, and turn history.</p>
     </section>
     <section aria-labelledby="close-a-turn" hidden={topic !== 'get-started' && topic !== 'close-a-turn'}>
       <h3 id="close-a-turn" tabIndex={-1}>{topics['close-a-turn']}</h3>
       <p>Close a regular month to record a holding’s approved population changes, income, and expenses.</p>
       <ol>
-        <li>Open <strong>Domain Play → Add holding</strong>. Enter the ruler, territory, families, and resources. Choose the <strong>First month to close</strong> and save the holding.</li>
+        <li>Open <strong>Domain → Domain Play → Add holding</strong>. Enter the ruler, territory, families, and resources. Choose the <strong>First month to close</strong> and save the holding.</li>
         <li>Move the campaign clock to the holding’s closing date. Open <strong>Domain Play</strong> and choose <strong>Preview turn</strong>. If several months are due, start with the earliest one. Festivals have no turn of their own.</li>
         <li>Review each territory’s population and resources. The first territory turn leaves suggested growth off by default. Enter adjustments or approve growth as needed.</li>
         <li>Review the separate cash and noncash balances. Enter expenses, select applicable event effects, and approve any liege payment, tithe, or XP award you want to record.</li>
@@ -84,7 +85,7 @@ export function UserGuide({ topic, onClose }: { topic: GuideTopic; onClose: () =
     <section aria-labelledby="estimate-construction" hidden={topic !== 'get-started' && topic !== 'estimate-construction'}>
       <h3 id="estimate-construction" tabIndex={-1}>{topics['estimate-construction']}</h3>
       <ol>
-        <li>Open <strong>Castle estimates → New estimate</strong>. Choose <strong>Stone wall</strong>, select <strong>Add module line</strong>, and set <strong>Quantity</strong> to 2. The default estimate is 1,100 gp and 66 worker-weeks after standard finish and overhead.</li>
+        <li>Open <strong>Domain → Castle estimates → New estimate</strong>. Choose <strong>Stone wall</strong>, select <strong>Add module line</strong>, and set <strong>Quantity</strong> to 2. The default estimate is 1,100 gp and 66 worker-weeks after standard finish and overhead.</li>
         <li>Choose a <strong>Finish</strong> and review the seven <strong>Site Production Modifier</strong> factors. Changing a factor recalculates cost and labor. If you enter an override, note the reason.</li>
         <li>Enter the crew’s <strong>Approved continuous work duration (weeks)</strong>. Worker-weeks show the labor required. The duration is the time the crew needs working continuously. The forecast applies the project’s week length, festival pace, and closures.</li>
         <li>Select <strong>Save estimate draft</strong> to continue later, or <strong>Review project handoff</strong>. Choose a holding and create a project or revise an existing one. A revision shows the new budget, remaining work, and forecast. Confirm any completion change before applying it.</li>

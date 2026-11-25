@@ -50,6 +50,8 @@ export function CalendarEditor({ campaign, save, backup, close }: { campaign: Ca
       <button type="button" disabled={draft.periods.length >= 60} onClick={() => setDraft({ ...draft, periods: [...draft.periods, { id: crypto.randomUUID(), name: 'New period', days: 7, festival: true }] })}>Add period</button>
     </fieldset>
     <fieldset><legend>Moons</legend>
+      {draft.moons.length > 0 && <label className="check"><input type="checkbox" checked={draft.showMoons ?? true}
+        onChange={event => setDraft({ ...draft, showMoons: event.target.checked })}/> Show moons on the calendar</label>}
       {draft.moons.map((moon, i) => <div className="moon-settings" key={i}>
         <div className="form-row"><label>Name<input required maxLength={120} value={moon.name} onChange={e => updateMoon(i, { name: e.target.value })}/></label><label>Cycle in days<input type="number" min="0.001" max="100000" step="any" required value={moon.cycle || ''} onChange={e => updateMoon(i, { cycle: +e.target.value, source: 'GM-supplied configuration' })}/></label></div>
         <DateField calendar={campaign.calendar} label="Anchor date" value={moon.anchor} onChange={anchor => updateMoon(i, { anchor, source: 'GM-supplied anchor' })}/>
