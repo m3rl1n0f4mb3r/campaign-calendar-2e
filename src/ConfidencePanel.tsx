@@ -3,7 +3,7 @@ import { dateIndex, dateLabel, dateParts, displayYear, yearLabel, type Calendar 
 import {
   clampConfidence, confidenceBand, confidenceSchema, confidenceAt, drawEvents, effectCategories, eventOptions, initialConfidence, nextReview,
   recordCheck, recordReview, rollDie, triggerLabels, yearStart,
-  type Confidence, type ConfidenceCheck, type DominionEvent, type DomainEffect,
+  type Confidence, type ConfidenceCheck, type DominionEvent, type DomainEffect, type EventOption,
 } from './confidence'
 import { closingDay, dueMonth, formatGp, monthAt, sameMonth, type Holding, type TurnMonth } from './domain'
 import { DateField } from './DateField'
@@ -41,7 +41,11 @@ export function ConfidencePanel({ calendar, clock, holding, revision, selectedEv
   const [modifier, setModifier] = useState(0)
   const [notes, setNotes] = useState('')
   const [checkOpen, setCheckOpen] = useState(false)
-  const [options, setOptions] = useState(eventOptions)
+  const [options, setOptions] = useState(() => state.eventOptions ?? eventOptions())
+  const [custom, setCustom] = useState<EventOption>()
+  const optionsChanged = JSON.stringify(options) !== JSON.stringify(state.eventOptions ?? eventOptions())
+  const rollTitle = (roll: Confidence['draws'][number]['rolls'][number]) =>
+    roll.title ?? eventOptions().find(item => item.key === roll.key)?.title ?? roll.key
   const [eventYear, setEventYear] = useState(dateParts(calendar, clock).year)
   const [generation, setGeneration] = useState<{ year: number; target: number; rolls: Confidence['draws'][number]['rolls']; drafts: DominionEvent[] }>()
   const [effectSource, setEffectSource] = useState('')
@@ -121,6 +125,35 @@ export function ConfidencePanel({ calendar, clock, holding, revision, selectedEv
     const scheduled = selected.map(key => options.find(option => option.key === key)!)
     setGeneration({ year, target, rolls: [...(additional ? generation?.rolls ?? [] : []), ...rolls],
       drafts: [...existing, ...scheduled.map(item => makeEvent(item.title, dateParts(calendar, clock).year === year ? clock : yearStart(calendar, year), item.disaster))] })
+  }
+
+  function optionEditor(existing: boolean) {
+    if (!custom) return null
+    return <form className="form" onSubmit={e => {
+      e.preventDefault()
+      const title = custom.title.trim()
+      if (!title) return
+      const draft = { ...custom, title }
+      setOptions(current => existing ? current.map(item => item.key === draft.key ? draft : item) : [...current, draft])
+      setCustom(undefined)
+    }}>
+      <label>Event title<input required maxLength={120} value={custom.title} onChange={e => setCustom({ ...custom, title: e.target.value })}/></label>
+      <label>Event group<select value={custom.group} onChange={e => setCustom({ ...custom, group: e.target.value === 'Natural' ? 'Natural' : 'Unnatural' })}>
+        <option>Natural</option><option>Unnatural</option>
+      </select></label>
+      <label>Chance (%)<input type="number" min="0" max="100" required value={custom.chance} onChange={e => setCustom({ ...custom, chance: Number(e.target.value) })}/></label>
+      <label className="check"><input type="checkbox" checked={custom.disaster} onChange={e => setCustom({ ...custom, disaster: e.target.checked })}/> Natural disaster</label>
+      <label className="check"><input type="checkbox" checked={custom.enabled} onChange={e => setCustom({ ...custom, enabled: e.target.checked })}/> Enabled for annual rolls</label>
+      <div className="button-group">
+        <button type="button" onClick={() => setCustom(undefined)}>Cancel</button>
+        <button className="primary">{existing ? 'Apply changes' : 'Add to list'}</button>
+        {existing && <button type="button" className="catalog-icon danger" aria-label="Remove event from the annual list"
+          title="Remove event from the annual list" onClick={() => {
+            setOptions(current => current.filter(item => item.key !== custom.key))
+            setCustom(undefined)
+          }}><span aria-hidden="true">🗑︎</span></button>}
+      </div>
+    </form>
   }
 
   if (stale) return <div className="form">
@@ -206,16 +239,30 @@ export function ConfidencePanel({ calendar, clock, holding, revision, selectedEv
       </form>}
       <details><summary>Generate annual candidates</summary>
         <div className="form">
+          <p>Each enabled event gets its own d100 roll. A chance of 25% qualifies on a roll of 25 or lower. If more events qualify than the d4 target, the app randomly picks which ones to offer.</p>
           {(['Natural', 'Unnatural'] as const).map(group => <details key={group}><summary>{group} event chances</summary>
-            {options.filter(item => item.group === group).map(item => {
-              const update = (patch: Partial<typeof item>) => setOptions(options.map(option => option.key === item.key ? { ...option, ...patch } : option))
-              return <div className="form-row" key={item.key}>
-                <label className="check"><input type="checkbox" checked={item.enabled} onChange={e => update({ enabled: e.target.checked })}/>{item.title}</label>
-                <input aria-label={`${item.title} chance (%)`} type="number" min="0" max="100" value={item.chance}
-                  onChange={e => update({ chance: Math.min(100, Math.max(0, +e.target.value)) })}/>
-              </div>
-            })}
+            <ul className="catalog-list">
+              {options.filter(item => item.group === group).map(item => {
+                const isEditing = custom?.key === item.key
+                return <li key={item.key}>
+                  <div className="catalog-row annual-event-row">
+                    <div className="catalog-description"><strong>{item.title}</strong>
+                      <small>{item.chance}% · {item.enabled ? 'Enabled' : 'Disabled'}</small>
+                    </div>
+                    <button type="button" className="catalog-icon" aria-label={`Edit ${item.title}`} title={`Edit ${item.title}`}
+                      aria-expanded={isEditing} onClick={() => setCustom(isEditing ? undefined : item)}><span aria-hidden="true">✎</span></button>
+                  </div>
+                  {isEditing && optionEditor(true)}
+                </li>
+              })}
+            </ul>
           </details>)}
+          <p className="muted">Save the annual list to reuse it for this holding. Removing a list entry affects future rolls.</p>
+          <div className="button-group">
+            <button type="button" onClick={() => setCustom({ key: crypto.randomUUID(), title: '', group: 'Natural', chance: 10, disaster: false, enabled: true })}>Add event to annual list</button>
+            <button type="button" disabled={!optionsChanged || !!custom} onClick={() => void commit({ ...state, eventOptions: options })}>Save annual list</button>
+          </div>
+          {custom && !options.some(item => item.key === custom.key) && optionEditor(false)}
           <label>Event year<input type="number" min="-99999" max="99999" step="1" defaultValue={displayYear(calendar, eventYear)}
             onBlur={e => {
               const year = e.target.valueAsNumber
@@ -242,14 +289,14 @@ export function ConfidencePanel({ calendar, clock, holding, revision, selectedEv
               <EventFields calendar={calendar} event={event} change={updated => setGeneration({ ...generation, drafts: generation.drafts.map(item => item.id === event.id ? updated : item) })}/>
               <button type="button" onClick={() => setGeneration({ ...generation, drafts: generation.drafts.filter(item => item.id !== event.id) })}>Decline candidate</button>
             </fieldset>)}
-            <details><summary>Rolls</summary><ul>{generation.rolls.map((roll, index) => <li key={index}>{options.find(item => item.key === roll.key)?.title} · {roll.result} vs {roll.chance}%</li>)}</ul></details>
+            <details><summary>Rolls</summary><ul>{generation.rolls.map((roll, index) => <li key={index}>{rollTitle(roll)} · {roll.result} vs {roll.chance}%</li>)}</ul></details>
             <div className="button-group"><button type="button" onClick={() => setGeneration(undefined)}>Cancel</button><button className="primary">Save annual event decisions</button></div>
           </form>}
         </div>
       </details>
       {!!state.draws.length && <details><summary>Saved event rolls</summary>
         {state.draws.map((draw, index) => <details key={index}><summary>{yearLabel(calendar, draw.year)} · target {draw.target} · {draw.selected.length} scheduled</summary>
-          <ul>{draw.rolls.map((roll, i) => <li key={i}>{options.find(item => item.key === roll.key)?.title} · {roll.result} vs {roll.chance}%</li>)}</ul>
+          <ul>{draw.rolls.map((roll, i) => <li key={i}>{rollTitle(roll)} · {roll.result} vs {roll.chance}%</li>)}</ul>
         </details>)}
       </details>}
       {state.events.filter(item => item.status !== 'removed').sort((a, b) => Number(b.id === selectedEvent) - Number(a.id === selectedEvent) || a.day - b.day).map(event => {
