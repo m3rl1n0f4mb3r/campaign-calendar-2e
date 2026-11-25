@@ -1,6 +1,6 @@
 export type Period = { id: string; name: string; days: number; festival: boolean }
 export type Moon = { name: string; cycle: number; anchor: number; phase: number; source: string; color?: string }
-export type Calendar = { periods: Period[]; weekdays: string[]; before: string; after: string; skipZero: boolean; moons: Moon[] }
+export type Calendar = { periods: Period[]; weekdays: string[]; before: string; after: string; skipZero: boolean; moons: Moon[]; showMoons?: boolean }
 export type DateParts = { year: number; period: string; day: number }
 
 export const mod = (n: number, d: number) => ((n % d) + d) % d

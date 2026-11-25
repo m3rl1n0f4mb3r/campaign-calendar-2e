@@ -11,11 +11,14 @@ import { EstimatePanel } from './EstimatePanel'
 import { UserGuide, type GuideTopic } from './UserGuide'
 import { DomainPanel, type ReceiptLink } from './DomainPanel'
 import { constructionEntries, dominionEntries, turnEntries } from './domain'
+import { ActionMenu } from './ActionMenu'
 import { CalendarEditor } from './CalendarEditor'
+import { PrintCalendar } from './PrintCalendar'
+import type { PrintEntry } from './printing'
 import './style.css'
 
 type View = 'Month' | 'Week' | 'Day' | 'Agenda'
-type Panel = 'new' | 'calendar' | 'event' | 'jump' | 'clock' | 'data' | 'delete' | 'search' | 'domains' | 'estimates'
+type Panel = 'new' | 'calendar' | 'event' | 'jump' | 'clock' | 'data' | 'delete' | 'search' | 'domains' | 'estimates' | 'print'
 const views: View[] = ['Month', 'Week', 'Day', 'Agenda']
 
 function initialize() {
@@ -26,7 +29,7 @@ function initialize() {
     saved = localStorage.getItem(key)
     return { store: saved ? parseStore(saved) : fallback, error: '', locked: false, raw: saved }
   } catch {
-    return { store: fallback, error: 'Saved data could not be read. Restore a backup, or use Data to start fresh.', locked: true, raw: saved }
+    return { store: fallback, error: 'Saved data could not be read. Restore a backup, or use Campaign → Backups and data to start fresh.', locked: true, raw: saved }
   }
 }
 
@@ -55,7 +58,6 @@ function App() {
   const cal = campaign.calendar
   const [selected, setSelected] = useState(campaign.current)
   const [view, setView] = useState<View>('Month')
-  const [showMoons, setShowMoons] = useState(false)
   const [panel, setPanel] = useState<Panel>()
   const [constructionProject, setConstructionProject] = useState<{ holdingId: string; projectId: string }>()
   const [dominionEvent, setDominionEvent] = useState<{ holdingId: string; id: string }>()
@@ -71,13 +73,13 @@ function App() {
   const restoreRequest = useRef(0)
   const [preset, setPreset] = useState('generic')
   const [campaignName, setCampaignName] = useState('')
-  const dialogTitle = { new: 'New campaign', calendar: 'Calendar settings', event: editing ? 'Edit event' : 'New event', jump: 'Jump to date', clock: 'Set campaign date', data: 'Campaign data', delete: 'Delete campaign', search: 'Search events', domains: 'Domain Play', estimates: 'Castle estimates' }
+  const dialogTitle = { new: 'New campaign', calendar: 'Calendar settings', event: editing ? 'Edit event' : 'New event', jump: 'Jump to date', clock: 'Set campaign date', data: 'Campaign data', delete: 'Delete campaign', search: 'Search events', domains: 'Domain Play', estimates: 'Castle estimates', print: 'Print calendar' }
 
   function syncSaved(value: string | null) {
     setRaw(value)
     if (value === null) {
       setLocked(true)
-      setError('Saved data was removed in another tab. Restore a backup or start fresh.')
+      setError('Saved data was removed in another tab. Use Campaign → Backups and data to restore or start fresh.')
       return
     }
     try {
@@ -91,7 +93,7 @@ function App() {
       }
     } catch {
       setLocked(true)
-      setError('Saved data could not be read. Restore a backup or start fresh.')
+      setError('Saved data could not be read. Use Campaign → Backups and data to restore or start fresh.')
     }
   }
 
@@ -175,8 +177,8 @@ function App() {
   const from = search?.from ?? (view === 'Month' ? monthStart : view === 'Week' ? weekStart : selected)
   const to = search ? search.to + 1 : view === 'Month' ? monthEnd : view === 'Week' ? weekStart + weekLength : selected + (view === 'Agenda' ? 30 : 1)
   const weekGrid = !search && (view === 'Month' || view === 'Week')
-  const showCalendarMoons = showMoons && cal.moons.length > 0
-  const printRange = view === 'Month' && !search ? '' : from + 1 === to
+  const showCalendarMoons = cal.moons.length > 0 && (cal.showMoons ?? true)
+  const printRange = from + 1 === to
     ? dateLabel(cal, from)
     : `${dateLabel(cal, from)} – ${dateLabel(cal, to - 1)}`
   const list = occurrences(cal, campaign.events, from, to, search?.query)
@@ -188,14 +190,15 @@ function App() {
     {!compact && <small>{timeLabel(event)}{event.location && ` · ${event.location}`}</small>}
   </button>
   function calendarEntries(events: Occurrence[], start: number, end: number, term?: string) {
-    const entries = events.map(event => ({
+    const entries: (PrintEntry & { render: (day: number, compact?: boolean) => ReactNode })[] = events.map(event => ({
       key: `${event.series.id}:${event.original}`, start: event.start, end: event.end,
+      title: event.title, kind: event.allDay ? 'all-day' : 'timed', time: timeLabel(event), location: event.location,
       render: (day: number, compact = false) => eventButton(event, day, compact),
     }))
     for (const entry of turnEntries(cal, campaign.holdings ?? [], start, end, term)) {
       const entryKey = `turn:${entry.holdingId}:${entry.month.year}:${entry.month.period}`
       entries.push({
-        key: entryKey, start: entry.day * minutes, end: (entry.day + 1) * minutes,
+        key: entryKey, title: entry.title, kind: 'turn', start: entry.day * minutes, end: (entry.day + 1) * minutes,
         render: (_, compact = false) => <button key={entryKey} className={compact ? 'event-chip domain-event' : 'event-item domain-event'} onClick={() => {
           setConstructionProject(undefined)
           setDominionEvent(undefined)
@@ -206,7 +209,7 @@ function App() {
     }
     for (const entry of dominionEntries(campaign.holdings ?? [], start, end, term)) {
       const entryKey = `dominion:${entry.holdingId}:${entry.id}`
-      entries.push({ key: entryKey, start: entry.day * minutes, end: (entry.day + 1) * minutes,
+      entries.push({ key: entryKey, title: entry.title, kind: 'dominion', start: entry.day * minutes, end: (entry.day + 1) * minutes,
         render: (_, compact = false) => <button key={entryKey} className={compact ? 'event-chip domain-event' : 'event-item domain-event'} onClick={() => {
           setReceipt(undefined)
           setConstructionProject(undefined)
@@ -217,7 +220,7 @@ function App() {
     }
     for (const entry of constructionEntries(cal, campaign.holdings ?? [], start, end, term)) {
       const entryKey = `construction:${entry.holdingId}:${entry.projectId}:${entry.id}`
-      entries.push({ key: entryKey, start: entry.day * minutes, end: (entry.day + 1) * minutes,
+      entries.push({ key: entryKey, title: entry.title, kind: 'construction', start: entry.day * minutes, end: (entry.day + 1) * minutes,
         render: (_, compact = false) => <button key={entryKey} className={compact ? 'event-chip domain-event' : 'event-item domain-event'} onClick={() => {
           setReceipt(undefined)
           setDominionEvent(undefined)
@@ -236,6 +239,10 @@ function App() {
     return <li key={index}><span className={`moon-disc phase-${phase}`} style={{ color: moonColor(moon, index) }} role="img" aria-label={label} title={label}/></li>
   })}</ul>
 
+  const moonLegend = <ul className="moon-legend" aria-label="Moons in display order">{cal.moons.map((moon, index) =>
+    <li key={index}><span className="moon-disc phase-4" style={{ color: moonColor(moon, index) }} aria-hidden="true"/>{moon.name}</li>
+  )}</ul>
+
   function calendarCell(day: number) {
     const parts = dateParts(cal, day)
     const outside = view === 'Month' && (day < first || day >= first + period.days)
@@ -251,42 +258,67 @@ function App() {
   return <>
     <header className="masthead">
       <div className="brand"><span aria-hidden="true">◈</span> Campaign Calendar</div>
-      <div className="header-actions"><button onClick={() => open('estimates')}>Castle estimates</button><button onClick={() => openGuide('get-started')}>Help</button><button onClick={() => open('search')}>Search</button><button onClick={() => open('data')}>Data</button></div>
+      <nav className="header-actions" aria-label="Campaign tools">
+        <ActionMenu label="Campaign">{choose => <>
+          <label className="campaign-picker">Switch campaign
+            <select value={store.active} onChange={event => {
+              const active = event.target.value
+              choose(async () => {
+                if (await commit({ ...store, active })) {
+                  setSelected(store.campaigns.find(item => item.id === active)!.current)
+                  setSearch(undefined)
+                }
+              })
+            }}>{store.campaigns.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
+          </label>
+          <button type="button" onClick={() => choose(() => open('new'))}>New campaign</button>
+          <button type="button" onClick={() => choose(() => open('calendar'))}>Calendar settings</button>
+          <button type="button" onClick={() => choose(() => open('print'))}>Print</button>
+          <button type="button" onClick={() => choose(() => open('data'))}>Backups and data</button>
+        </>}</ActionMenu>
+        <ActionMenu label="Domain">{choose => <>
+          <button type="button" onClick={() => choose(() => open('domains'))}>Domain Play</button>
+          <button type="button" onClick={() => choose(() => open('estimates'))}>Castle estimates</button>
+        </>}</ActionMenu>
+        <button onClick={() => openGuide('get-started')}>Help</button>
+      </nav>
     </header>
     {error && <p role="alert" className="error global-error">{error}</p>}
     <main className="layout">
-      <aside className="sidebar">
-        <label htmlFor="campaign-select">Campaign</label>
-        <select id="campaign-select" value={store.active} onChange={async e => {
-          const active = e.target.value
-          if (await commit({ ...store, active })) { setSelected(store.campaigns.find(item => item.id === active)!.current); setSearch(undefined) }
-        }}>{store.campaigns.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
-        <button className="sidebar-action" onClick={() => open('new')}>＋ New campaign</button>
-        <button className="sidebar-action" onClick={() => open('calendar')}>Calendar settings</button>
-        <button className="sidebar-action" onClick={() => open('domains')}>Domain Play</button>
-        <section className="clock-card">
-          <h2>Campaign date</h2><p>{dateLabel(cal, campaign.current)}</p>
-          <button className="sidebar-action" onClick={() => open('clock')}>Set date</button>
-          <button onClick={() => setClock(campaign.current + 1)}>Advance one day</button>
-        </section>
-      </aside>
       <section className="workspace">
         <div className="heading">
           <div><p className="campaign-name">{campaign.name}</p><h1>{search ? 'Search results' : `${period.name} · ${yearLabel(cal, date.year)}`}</h1>
-            {printRange && <p className="print-only">{printRange}</p>}
+            {(search || view !== 'Month') && <p className="print-only">{printRange}</p>}
           </div>
-          <div className="button-group calendar-actions"><button onClick={() => window.print()}>Print</button><button className="primary" onClick={() => openEvent()}>＋ New event</button></div>
+          <div className="button-group calendar-actions">
+            <button className="primary" onClick={() => openEvent()}>＋ New event</button>
+          </div>
         </div>
         <div className="toolbar">
-          {search ? <><span>{search.query || 'All events'} · {dateLabel(cal, search.from)} – {dateLabel(cal, search.to)}</span><button onClick={() => setSearch(undefined)}>Back to calendar</button></> : <>
-            <div className="button-group"><button aria-label="Previous period" onClick={() => navigate(-1)}>‹</button><button aria-label="Next period" onClick={() => navigate(1)}>›</button><button onClick={() => setSelected(campaign.current)}>Campaign date</button><button onClick={() => open('jump')}>Jump</button></div>
-            <div className="button-group view-tabs" aria-label="Calendar view">{views.map(item => <button key={item} aria-pressed={view === item} onClick={() => setView(item)}>{item}</button>)}</div>
-          </>}
-          {cal.moons.length > 0 && <label className="moon-toggle"><input type="checkbox" checked={showMoons} onChange={event => setShowMoons(event.target.checked)}/> Show moons</label>}
+          {search ? <>
+            <span>{search.query || 'All events'} · {dateLabel(cal, search.from)} – {dateLabel(cal, search.to)}</span>
+            <button onClick={() => setSearch(undefined)}>Back to calendar</button>
+          </> : <div className="button-group calendar-navigation">
+            <button aria-label="Previous period" onClick={() => navigate(-1)}>‹</button>
+            <button aria-label="Next period" onClick={() => navigate(1)}>›</button>
+            <div className="calendar-clock" role="group" aria-label="Campaign clock">
+              <button title="Go to campaign date" aria-label={`Go to campaign date, ${dateLabel(cal, campaign.current)}`}
+                onClick={() => setSelected(campaign.current)}>{dateLabel(cal, campaign.current)}</button>
+              <ActionMenu label="Campaign clock options" iconOnly>{choose => <>
+                <button type="button" onClick={() => choose(() => open('clock'))}>Set date</button>
+                <button type="button" onClick={() => choose(() => void setClock(campaign.current + 1))}>Advance one day</button>
+              </>}</ActionMenu>
+            </div>
+            <button onClick={() => open('jump')}>Jump</button>
+          </div>}
+          <div className="button-group">
+            {!search && <div className="button-group view-tabs" aria-label="Calendar view">{views.map(item =>
+              <button key={item} aria-pressed={view === item} onClick={() => setView(item)}>{item}</button>
+            )}</div>}
+            <button onClick={() => open('search')}>Search</button>
+          </div>
         </div>
-        {showCalendarMoons && <ul className="moon-legend" aria-label="Moons in display order">{cal.moons.map((moon, index) =>
-          <li key={index}><span className="moon-disc phase-4" style={{ color: moonColor(moon, index) }} aria-hidden="true"/>{moon.name}</li>
-        )}</ul>}
+        {showCalendarMoons && <div className="print-only">{moonLegend}</div>}
         {weekGrid ? <div className="grid-scroll"><div className="calendar-grid printable-grid" style={{ gridTemplateColumns: `repeat(${weekLength}, minmax(${showCalendarMoons ? '112px' : '84px'}, 1fr))` }}>
           <div className="calendar-grid-header"><div className="calendar-grid-row">{cal.weekdays.map((name, i) => <div className="weekday" key={i}>{name}</div>)}</div></div>
           <div className="calendar-grid-body">{Array.from({ length: (to - from) / weekLength }, (_, row) =>
@@ -305,8 +337,9 @@ function App() {
           }) : <p className="muted">No events in this date range.</p>}
         </div>}
       </section>
-      <aside className="details">
-        <h2>{dateLabel(cal, selected)}</h2><p className="muted">{cal.weekdays[weekday(cal, selected)]}</p>
+      <aside className="details" aria-labelledby="selected-day-heading">
+        <h2 id="selected-day-heading">Selected day</h2>
+        <p><strong>{dateLabel(cal, selected)}</strong></p><p className="muted">{cal.weekdays[weekday(cal, selected)]}</p>
         {cal.moons.length > 0 && <section><h3>Moon phases</h3>{cal.moons.map((moon, index) => {
           const phase = moonPhase(moon, selected)
           return <div className="moon" key={index}><span aria-hidden="true" style={{ color: moonColor(moon, index) }}>{phaseSymbols[phase]}</span><div><strong>{moon.name}</strong><small>{phaseNames[phase]}</small></div></div>
@@ -316,6 +349,12 @@ function App() {
     </main>
     {panel && <Dialog key={panel} title={dialogTitle[panel]} close={close}>
       {error && <p role="alert" className="error">{error}</p>}
+      {panel === 'print' && <PrintCalendar calendar={cal} campaignName={campaign.name} current={campaign.current}
+        showMoons={showCalendarMoons} moonList={moonList} moonLegend={moonLegend} close={close} viewQuery={search?.query}
+        currentView={view === 'Month' && !search
+          ? { from: first, to: first + period.days, title: `${period.name} · ${yearLabel(cal, date.year)}`, grid: true }
+          : { from, to, title: `${search ? 'Search results' : view} · ${printRange}`, grid: weekGrid }}
+        entries={(start, end, query) => calendarEntries(occurrences(cal, campaign.events, start, end, query), start, end, query)}/>}
       {panel === 'estimates' && <EstimatePanel campaign={campaign} save={saveCampaign} help={() => openGuide('estimate-construction')}/>}
       {panel === 'domains' && <DomainPanel campaign={campaign} revision={raw} receipt={receipt} dominionEvent={dominionEvent} constructionProject={constructionProject} help={openGuide} backup={backup} save={holdings => saveCampaign({ ...campaign, holdings })}/>}
       {panel === 'event' && <EventEditor calendar={cal} day={selected} event={editing} save={saveEvent} close={close}/>}

@@ -12,6 +12,7 @@ const calendar = z.object({
   periods: z.array(z.object({ id: name, name, days: positive.max(366), festival: z.boolean() })).min(1).max(60),
   weekdays: z.array(name).min(1).max(30),
   before: z.string(), after: z.string(), skipZero: z.boolean(),
+  showMoons: z.boolean().optional(),
   moons: z.array(z.object({ name, cycle: z.number().finite().positive().max(100000), anchor: coordinate, phase: z.number().int().min(0).max(7), source: z.string(), color: hexColor.optional() })).max(30),
 }).refine(value => value.periods.some(p => !p.festival) && new Set(value.periods.map(p => p.id)).size === value.periods.length, 'Calendar needs a month and unique period IDs')
 const eventData = z.object({
