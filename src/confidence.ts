@@ -25,12 +25,17 @@ const effect = z.object({
   category: z.enum(['tax', 'services', 'resource', 'general']),
   balance: z.enum(['cash', 'noncash']), amount: integer,
 })
-const roll = z.object({ key: id, chance: z.number().min(0).max(100), result: z.number().int().min(1).max(100) })
+const eventOption = z.object({
+  key: id, title: reason, group: z.enum(['Natural', 'Unnatural']),
+  chance: z.number().min(0).max(100), disaster: z.boolean(), enabled: z.boolean(),
+})
+const roll = z.object({ key: id, title: reason.optional(), chance: z.number().min(0).max(100), result: z.number().int().min(1).max(100) })
 export const confidenceSchema = z.object({
   start: day.optional(),
   base: score, current: score,
   baseRoll: z.object({ die: z.number().int().min(1).max(100), abilities: z.array(z.number().int().min(1).max(25)).length(6) }).optional(),
   reviews: z.array(annual), checks: z.array(check), events: z.array(event), effects: z.array(effect),
+  eventOptions: z.array(eventOption).optional(),
   draws: z.array(z.object({ year: integer, target: z.number().int().min(1).max(4), rolls: z.array(roll), selected: z.array(id) })),
 })
 export type Confidence = z.infer<typeof confidenceSchema>
@@ -92,7 +97,7 @@ export function recordReview(cal: Calendar, start: number, current: number, stat
   return { ...result, reviews: [...state.reviews, { ...next, skipped: skip, checkId: skip ? undefined : checkId }] }
 }
 
-export type EventOption = { key: string; title: string; group: 'Natural' | 'Unnatural'; chance: number; disaster: boolean; enabled: boolean }
+export type EventOption = z.infer<typeof eventOption>
 const natural: [string, number, boolean?][] = [
   ['Comet', 30], ['Death of an official', 10], ['Earthquake', 10, true], ['Explosion', 10],
   ['Minor fire', 50], ['Major fire', 10, true], ['Flood', 10], ['Hurricane', 15, true],
@@ -114,7 +119,7 @@ export function eventOptions(): EventOption[] {
 }
 export const rollDie = (sides: number) => 1 + Math.floor(Math.random() * sides)
 export function drawEvents(options: EventOption[], target: number, die = rollDie) {
-  const rolls = options.filter(option => option.enabled).map(({ key, chance }) => ({ key, chance, result: die(100) }))
+  const rolls = options.filter(option => option.enabled).map(({ key, title, chance }) => ({ key, title, chance, result: die(100) }))
   const matches = rolls.filter(item => item.result <= item.chance).map(item => item.key)
   while (matches.length > target) matches.splice(die(matches.length) - 1, 1)
   return { rolls, selected: matches }

@@ -49,6 +49,10 @@ describe('confidence and events', () => {
       events: [{ id: 'event', day: festival, status: 'resolved', disaster: true, title: 'Earthquake', notes: '', resolvedDay: festival }],
       effects: [{ id: 'effect', source: 'check', title: 'Lost harvest', target: month, category: 'resource', balance: 'noncash', amount: -1000 }],
     }
+    const custom = { key: 'local-festival', title: 'River blessing', group: 'Unnatural' as const, chance: 25, disaster: false, enabled: true }
+    const removed = { ...custom, key: 'removed-entry', title: 'Old tradition' }
+    confidence.eventOptions = [custom]
+    confidence.draws = [{ year: 0, target: 2, ...drawEvents([custom, removed], 2, () => 25) }]
     const holding: Holding = { id: 'h', name: 'Hold', ruler: 'GM', liege: 'Count', first: month,
       families: 100, services: 1000, tax: 100, resources: [{ name: 'Crops', type: 'vegetable' }],
       opening: { cash: 0, noncash: 0 }, turns: [], replay: [], xpMode: 'pc', confidence }
@@ -67,6 +71,7 @@ describe('confidence and events', () => {
     const campaign = newCampaign('Campaign', cal)
     const restored = parseCampaignBackup(exportCampaign({ ...campaign, holdings: [reopened] }))
     expect(restored.holdings?.[0].confidence).toEqual(confidence)
+    expect(restored.holdings?.[0].confidence?.draws[0].rolls[1].title).toBe('Old tradition')
   })
 
   it('moves event and confidence dates on calendar migration', () => {
