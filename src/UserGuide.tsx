@@ -90,6 +90,7 @@ export function UserGuide({ topic, onClose }: { topic: GuideTopic; onClose: () =
         <li>Open <strong>Domain → Battles and sieges</strong>. Enter the dates, participants, and outcome from play at the table. A siege without an end date appears in <strong>Active sieges</strong> while browsing dates on or after its start.</li>
         <li>Save the engagement, then propose consequences individually. Review the dated unit strength before approving a roster change. Link a repair project and any existing cost, or propose a separate one-off expense.</li>
         <li>Approve an expense in its target turn. For confidence, open the proposed review and decide whether to record a check. Use the linked roster, project, or receipt to correct applied consequences.</li>
+        <li>For the chapter 8 procedure, select <strong>Quick resolution</strong>. Enter force points and morale, then follow the dice and decision prompts. Each step saves automatically. Approve the result to add it to an engagement and use the consequence workflow for any troop or ledger changes.</li>
       </ol>
     </section>
     <section aria-labelledby="military-expenses" hidden={topic !== 'get-started' && topic !== 'military-expenses'}>
