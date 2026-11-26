@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { lazy, Suspense, useState } from 'react'
 import { dateLabel } from './calendar'
 import { DateField } from './DateField'
 import { closingDay, formatGp, type TurnMonth } from './domain'
@@ -7,6 +7,8 @@ import {
   type Consequence, type Engagement, type EngagementParticipant,
 } from './engagement'
 import type { Campaign } from './storage'
+
+const QuickResolutionPanel = lazy(() => import('./QuickResolutionPanel'))
 
 export const consequenceLabels = { troops: 'Roster change', repair: 'Repair project', expense: 'One-off expense', confidence: 'Confidence review' }
 export type EngagementLink =
@@ -20,6 +22,7 @@ export function EngagementPanel({ campaign, revision, selected, initialId, initi
   save: (campaign: Campaign) => Promise<boolean>; openLink: (link: EngagementLink) => void; help: () => void
 }) {
   const [id, setId] = useState(initialId)
+  const [quick, setQuick] = useState(false)
   const [draft, setDraft] = useState<Engagement>()
   const [editRevision, setEditRevision] = useState(revision)
   const [proposal, setProposal] = useState<Consequence | 'new'>()
@@ -42,6 +45,9 @@ export function EngagementPanel({ campaign, revision, selected, initialId, initi
     catch (cause) { setError(cause instanceof Error && cause.name !== 'ZodError' ? cause.message : 'Enter valid engagement details, dates, and amounts.') }
     finally { setBusy(false) }
   }
+
+  if (quick) return <Suspense fallback={<p role="status">Loading quick resolution…</p>}><QuickResolutionPanel campaign={campaign} selected={selected} engagement={item} save={save}
+    back={() => setQuick(false)} openEngagement={id => { setId(id); setQuick(false) }}/></Suspense>
 
   return <div className="form">
     <div className="guide-context"><button type="button" onClick={help}>Help with battles and sieges</button>
@@ -85,6 +91,7 @@ export function EngagementPanel({ campaign, revision, selected, initialId, initi
       {item.notes && <p className="domain-notes">{item.notes}</p>}
       {!!item.participants.length && <ul>{item.participants.map(person => <li key={person.id}>{person.side} · {person.name}
         {person.before !== undefined && ` · Before ${person.before}`}{person.after !== undefined && ` · After ${person.after}`}</li>)}</ul>}
+      <button type="button" onClick={() => setQuick(true)}>Quick resolution</button>
       <button type="button" onClick={() => { setEditRevision(revision); setDraft(item); setProposal(undefined) }}>Edit engagement</button>
       <fieldset className="form" disabled={busy}><legend>Consequences</legend>
         {!item.consequences.length && <p>No consequences recorded.</p>}
@@ -142,6 +149,7 @@ export function EngagementPanel({ campaign, revision, selected, initialId, initi
           : <button type="button" disabled={!holdings.length} onClick={() => { setEditRevision(revision); setProposal('new') }}>Propose consequence</button>}
       </fieldset>
     </> : <>
+      <button type="button" onClick={() => setQuick(true)}>Quick resolution</button>
       <button type="button" className="primary" onClick={() => { setEditRevision(revision); setDraft({
         id: crypto.randomUUID(), title: '', kind: 'battle', start: selected, location: '', holdingId: initialHolding, participants: [], outcome: '', notes: '', consequences: [],
       }) }}>New battle or siege</button>

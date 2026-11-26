@@ -3,6 +3,7 @@ import { dayOf, hasOccurrence, minutes, occurrences, type EventData } from './ev
 import type { Campaign } from './storage'
 import { forecast, validProjects } from './construction'
 import { engagementSchema, validEngagements } from './engagement'
+import { quickResolutionSchema } from './quickResolution'
 import { yearStart } from './confidence'
 import { closingDay, dueMonth, validHoldings, type TurnInputs, type TurnMonth } from './domain'
 
@@ -176,6 +177,14 @@ export function migrate(campaign: Campaign, next: Calendar) {
     return moved
   })
   if (engagements && !errors.length && !validEngagements(engagements, holdings ?? [])) errors.push('A linked engagement consequence could not be migrated.')
+  const resolutions = campaign.resolutions?.map(item => {
+    const moved = { ...item, start: day(item.start, `${item.title} resolution start`),
+      steps: item.steps.map(step => ({ ...step, day: day(step.day, `${item.title} resolution ${step.kind}`) })),
+      approval: item.approval && { ...item.approval, day: day(item.approval.day, `${item.title} resolution approval`) },
+    }
+    if (!quickResolutionSchema.safeParse(moved).success) errors.push(`${item.title} would have an invalid resolution history after migration.`)
+    return moved
+  })
   if (!errors.length && events.some(event => event.rule)) {
     const before = occurrences(old, campaign.events.filter(event => event.rule), campaign.current, campaign.current + 30)
     const after = occurrences(next, events.filter(event => event.rule), current, current + 30)
@@ -185,5 +194,5 @@ export function migrate(campaign: Campaign, next: Calendar) {
       changes.push(`${label}: ${summary || 'No occurrences'}${results.length > 10 ? ` (+${results.length - 10} more)` : ''}`)
     }
   }
-  return { campaign: { ...campaign, current, calendar: { ...next, moons }, events, ...(holdings ? { holdings } : {}), ...(engagements ? { engagements } : {}) }, changes, errors, affected }
+  return { campaign: { ...campaign, current, calendar: { ...next, moons }, events, ...(holdings ? { holdings } : {}), ...(engagements ? { engagements } : {}), ...(resolutions ? { resolutions } : {}) }, changes, errors, affected }
 }

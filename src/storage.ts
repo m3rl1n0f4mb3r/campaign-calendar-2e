@@ -3,6 +3,7 @@ import { template, type Calendar } from './calendar'
 import { holdingSchema, validHoldings, type Holding } from './domain'
 import { estimateSchema, moduleSchema, type CastleModule, type Estimate } from './estimate'
 import { engagementSchema, validEngagements, type Engagement } from './engagement'
+import { quickResolutionSchema, type Resolution } from './quickResolution'
 import type { Series } from './events'
 
 const coordinate = z.number().int().min(-10_000_000_000).max(10_000_000_000)
@@ -32,14 +33,15 @@ const series = eventData.extend({
   cutoff: coordinate.optional(),
 }).refine(validRange, 'Event end must follow its start')
 
-export type Campaign = { id: string; name: string; calendar: Calendar; current: number; events: Series[]; holdings?: Holding[]; castleCatalog?: CastleModule[]; castleEstimates?: Estimate[]; engagements?: Engagement[] }
+export type Campaign = { id: string; name: string; calendar: Calendar; current: number; events: Series[]; holdings?: Holding[]; castleCatalog?: CastleModule[]; castleEstimates?: Estimate[]; engagements?: Engagement[]; resolutions?: Resolution[] }
 export type Store = { version: 1; active: string; campaigns: Campaign[] }
 const campaignSchema = z.object({ id: name, name, calendar, current: coordinate, events: z.array(series), holdings: z.array(holdingSchema).optional(),
-  castleCatalog: z.array(moduleSchema).optional(), castleEstimates: z.array(estimateSchema).optional(), engagements: z.array(engagementSchema).optional(),
+  castleCatalog: z.array(moduleSchema).optional(), castleEstimates: z.array(estimateSchema).optional(), engagements: z.array(engagementSchema).optional(), resolutions: z.array(quickResolutionSchema).optional(),
 }).refine(campaign =>
   validHoldings(campaign.calendar, campaign.holdings ?? []) &&
+  (campaign.resolutions ?? []).every(item => !item.engagementId || campaign.engagements?.some(engagement => engagement.id === item.engagementId)) &&
   validEngagements(campaign.engagements ?? [], campaign.holdings ?? []) &&
-  [campaign.castleCatalog ?? [], campaign.castleEstimates ?? [], campaign.engagements ?? []].every(items => new Set(items.map(item => item.id)).size === items.length) &&
+  [campaign.castleCatalog ?? [], campaign.castleEstimates ?? [], campaign.engagements ?? [], campaign.resolutions ?? []].every(items => new Set(items.map(item => item.id)).size === items.length) &&
   new Set(campaign.events.map(event => event.id)).size === campaign.events.length &&
   campaign.events.every(event => event.rule?.weekdays.every(day => day < campaign.calendar.weekdays.length) ?? true),
 'Campaign events and domain history must be valid')
