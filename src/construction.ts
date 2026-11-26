@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { dateIndex, dateParts, type Calendar } from './calendar'
-import { estimateSnapshotSchema, type EstimateSnapshot } from './estimate'
+import { estimateSnapshotSchema, type EstimateSnapshot, type StaffingRevision } from './estimate'
 import type { TurnMonth } from './domain'
 
 const id = z.string().min(1).max(120)
@@ -55,7 +55,28 @@ export function workPace(project: Project, day: number, festival: boolean): Work
 }
 
 export function requiredWork(project: Project) {
-  return (project.workDays + project.reviews.reduce((sum, item) => sum + (item.extraDays ?? 0), 0)) * 2
+  const setbacks = setbackDays(project)
+  const staffing = project.estimates?.at(-1)?.staffing
+  if (staffing) return Math.max(1, staffing.approvedUnits + staffing.remainingUnits + (setbacks - staffing.settledSetbackDays) * 2)
+  return (project.workDays + setbacks) * 2
+}
+
+function setbackDays(project: Project) {
+  return project.reviews.reduce((sum, item) => sum + (item.extraDays ?? 0), 0)
+}
+
+export function staffingRevision(cal: Calendar, project: Project, effective: number, clock: number): StaffingRevision {
+  if (effective < project.start || project.progress.some(item => item.day >= effective)) {
+    throw new Error('Choose an effective date after the last approved work date and on or after project start.')
+  }
+  if (confirmedCompletion(project) === undefined) {
+    const approved = new Set(project.progress.map(item => item.day))
+    for (const { day } of workCandidates(cal, project, project.start, Math.min(clock, effective - 1))) {
+      if (!approved.has(day)) throw new Error('Review pending construction work before the staffing effective date.')
+    }
+  }
+  return { effective, approvedUnits: project.progress.reduce((sum, item) => sum + item.pace, 0),
+    requiredUnits: requiredWork(project), setbackDays: setbackDays(project), previous: project.estimates?.at(-1)?.staffing }
 }
 
 export function confirmedCompletion(project: Project) {
@@ -217,6 +238,17 @@ export function constructionOutcome(roll: number) {
 export function applyProjectEstimate(project: Project, snapshot: EstimateSnapshot): Project {
   if (project.canceled !== undefined) throw new Error('Choose a project that has not been canceled.')
   if (project.workWeek !== snapshot.workWeek) throw new Error('The estimate must use the project’s stored work-week length.')
-  return projectSchema.parse({ ...project, budget: snapshot.budget, workDays: snapshot.workDays,
+  const lastApproved = project.progress.reduce((last, item) => Math.max(last, item.day), project.start - 1)
+  const effective = snapshot.staffing?.effective
+  // The revision explicitly schedules remaining work from its effective date.
+  const priorStaffingIds = new Set(project.estimates?.filter(estimate => estimate.staffing).map(estimate => estimate.id))
+  const retainedStops = effective === undefined ? project.stops : project.stops.flatMap(stop => {
+    if (!priorStaffingIds.has(stop.id) || (stop.through ?? Infinity) < effective) return [stop]
+    return stop.from < effective ? [{ ...stop, through: effective - 1 }] : []
+  })
+  const stops = effective !== undefined && effective > lastApproved + 1 ? [...retainedStops, {
+    id: snapshot.id, from: lastApproved + 1, through: effective - 1, pace: 0 as const, notes: 'Awaiting staffing change',
+  }] : retainedStops
+  return projectSchema.parse({ ...project, budget: snapshot.budget, workDays: snapshot.workDays, stops,
     estimates: [...(project.estimates ?? []), snapshot] })
 }

@@ -96,6 +96,7 @@ export function migrate(campaign: Campaign, next: Calendar) {
         canceled: project.canceled === undefined ? undefined : day(project.canceled, label('cancellation')),
         ...(project.estimates && { estimates: project.estimates.map(snapshot => ({
           ...snapshot, approvedAt: day(snapshot.approvedAt, label('estimate approval')),
+          ...(snapshot.staffing && { staffing: { ...snapshot.staffing, effective: day(snapshot.staffing.effective, label('staffing effective date')) } }),
         })) }),
         progress: project.progress.map(work => ({ ...work, day: day(work.day, label('approved work')) })),
         stops: project.stops.map(mapRange), festivalOverrides: project.festivalOverrides.map(mapRange),

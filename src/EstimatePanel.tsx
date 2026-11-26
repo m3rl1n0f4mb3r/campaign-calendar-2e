@@ -1,11 +1,11 @@
 import { useMemo, useRef, useState } from 'react'
 import { dateLabel, type Calendar } from './calendar'
 import { DateField } from './DateField'
-import { applyProjectEstimate, confirmedCompletion, forecast, newProject, requiredWork, type Project, type WorkPace, type WorkRange } from './construction'
+import { applyProjectEstimate, confirmedCompletion, forecast, newProject, requiredWork, staffingRevision, type Project, type WorkPace, type WorkRange } from './construction'
 import { formatGp } from './domain'
 import {
   approveEstimate, calculateEstimate, defaultCatalog, estimateSchema, factorKeys, factorOptions, moduleSchema,
-  newEstimate, siteFactors, type CastleModule, type Estimate, type EstimateLine, type EstimateSnapshot,
+  newEstimate, siteFactors, staffingPresets, staffingSummary, type CastleModule, type Estimate, type EstimateLine, type EstimateSnapshot, type StaffingPlan,
 } from './estimate'
 import type { Campaign } from './storage'
 
@@ -48,6 +48,8 @@ export function EstimateHistory({ snapshots, calendar }: { snapshots?: EstimateS
     {[...snapshots].reverse().map(snapshot => <details key={snapshot.id} className="domain-holding">
       <summary>{snapshot.estimate.name} · {dateLabel(calendar, snapshot.approvedAt)} · {formatGp(snapshot.budget)}</summary>
       <p>{snapshot.workDays} work days at {snapshot.workWeek} work days per week.</p>
+      {snapshot.staffing && <p>Staffing from {dateLabel(calendar, snapshot.staffing.effective)} · {snapshot.staffing.paidCrew} paid workers · {snapshot.staffing.effectiveCrew} effective crew · {formatGp(snapshot.staffing.adjustment)} staffing adjustment.</p>}
+      {snapshot.estimate.staffing?.contributionNotes && <p>{snapshot.estimate.staffing.contributionNotes} · {formatGp(snapshot.estimate.staffing.compensation)} compensation.</p>}
       {snapshot.estimate.assumptions && <p className="domain-notes">{snapshot.estimate.assumptions}</p>}
       {snapshot.estimate.budgetReason && <p>Budget override: {snapshot.estimate.budgetReason}</p>}
       {snapshot.estimate.modifierReason && <p>Production Modifier override: {snapshot.estimate.modifierReason}</p>}
@@ -77,6 +79,7 @@ export function EstimatePanel({ campaign, save, help }: Props) {
   const [holdingId, setHoldingId] = useState('')
   const [projectId, setProjectId] = useState('')
   const [start, setStart] = useState(current)
+  const [effective, setEffective] = useState<number>()
   const [workWeek, setWorkWeek] = useState(calendar.weekdays.length)
   const [festivalPace, setFestivalPace] = useState<WorkPace>(0)
   const [closures, setClosures] = useState<WorkRange[]>([])
@@ -90,6 +93,7 @@ export function EstimatePanel({ campaign, save, help }: Props) {
   const holding = holdings.find(item => item.id === holdingId) ?? holdings[0]
   const eligible = holding?.projects?.filter(item => item.canceled === undefined) ?? []
   const existing = eligible.find(item => item.id === projectId)
+  const staffingDate = effective ?? (existing ? existing.progress.reduce((next, item) => Math.max(next, item.day + 1), Math.max(current, existing.start)) : start)
   const date = (day?: number) => day === undefined ? 'Paused' : dateLabel(calendar, day)
   const currentWorkWeek = existing?.workWeek ?? workWeek
   const idle = () => { setError(''); setNotice('') }
@@ -102,7 +106,7 @@ export function EstimatePanel({ campaign, save, help }: Props) {
   }
   const selectDraft = (value: Estimate) => {
     setDraft(value); setScreen('estimate'); setModuleId(''); setCatalogQuery('')
-    setProjectId(''); setStart(current); setWorkWeek(calendar.weekdays.length); setFestivalPace(0); setClosures([])
+    setProjectId(''); setEffective(undefined); setStart(current); setWorkWeek(calendar.weekdays.length); setFestivalPace(0); setClosures([])
     setReviewing(false); setConfirmChange(false); idle()
   }
   async function persist(next: Campaign, message: string) {
@@ -145,7 +149,8 @@ export function EstimatePanel({ campaign, save, help }: Props) {
   function proposedProject(value: Estimate, preview = false) {
     if (!Number.isInteger(currentWorkWeek) || currentWorkWeek < 1 || currentWorkWeek > 366) throw new Error('Enter a work-week length from 1 to 366 days.')
     if (!holding) throw new Error('Create a holding in Domain Play before applying an estimate.')
-    const snapshot = approveEstimate(value, currentWorkWeek, current, preview ? 'estimate-preview' : undefined)
+    const revision = existing && value.staffing ? staffingRevision(calendar, existing, staffingDate, current) : undefined
+    const snapshot = approveEstimate(value, currentWorkWeek, current, preview ? 'estimate-preview' : undefined, revision, start)
     if (snapshot.workDays > 10_000_000) throw new Error('The approved duration is too long for a construction project.')
     if (closures.some(closure => closure.through !== undefined && closure.through < closure.from)) {
       throw new Error('A seasonal closure must end on or after its start.')
@@ -162,6 +167,7 @@ export function EstimatePanel({ campaign, save, help }: Props) {
     try { proposal = proposedProject(draft, true) }
     catch (cause) { proposalError = cause instanceof Error && cause.name !== 'ZodError' ? cause.message : 'Check the estimate inputs before applying.' }
   }
+  const proposedStaffing = proposal?.estimates?.at(-1)?.staffing
   const previousCompletion = existing && confirmedCompletion(existing)
   const proposedCompletion = proposal && confirmedCompletion(proposal)
   const changesCompletion = !!existing && previousCompletion !== proposedCompletion
@@ -292,9 +298,12 @@ export function EstimatePanel({ campaign, save, help }: Props) {
       {draft.modifier !== undefined && <label>Reason for modifier override<input value={draft.modifierReason} onChange={e => editDraft({ modifierReason: e.target.value })}/></label>}
     </fieldset>
     {result ? <Breakdown result={result}/> : <p className="warning">Enter valid values to calculate the estimate.</p>}
+    {result && <StaffingFields estimate={draft} labor={result.labor} change={staffing => editDraft({ staffing })}/>}
     <div className="form-row">
       <Decimal key={`${draft.id}:budget`} label="Approved budget override (gp)" optional value={draft.approvedBudget} change={approvedBudget => editDraft({ approvedBudget })}/>
-      <Decimal key={`${draft.id}:duration`} label="Approved continuous work duration (weeks)" value={draft.duration} change={duration => editDraft({ duration: duration ?? 0 })}/>
+      {(!draft.staffing || draft.staffing.mode === 'custom') && <Decimal key={`${draft.id}:duration`}
+        label={draft.staffing ? 'Custom work duration (weeks, remaining for a revision)' : 'Approved continuous work duration (weeks)'}
+        value={draft.duration} change={duration => editDraft({ duration: duration ?? 0 })}/>}
     </div>
     {draft.approvedBudget !== undefined && <label>Reason for budget override<input value={draft.budgetReason} onChange={e => editDraft({ budgetReason: e.target.value })}/></label>}
     <label>Crew and productivity assumptions<textarea value={draft.assumptions} onChange={e => editDraft({ assumptions: e.target.value })}/></label>
@@ -303,13 +312,15 @@ export function EstimatePanel({ campaign, save, help }: Props) {
     {reviewing && <fieldset className="form"><legend>Project revision preview</legend>
       <button onClick={help}>Help applying an estimate</button>
       {!holding ? <p>Create a holding in Domain Play to apply an estimate.</p> : <>
-        <label>Holding<select value={holding.id} onChange={e => { setHoldingId(e.target.value); setProjectId(''); setConfirmChange(false) }}>
+        <label>Holding<select value={holding.id} onChange={e => { setHoldingId(e.target.value); setProjectId(''); setEffective(undefined); setConfirmChange(false) }}>
           {holdings.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
         </select></label>
-        <label>Project<select value={existing?.id ?? ''} onChange={e => { setProjectId(e.target.value); setConfirmChange(false) }}>
+        <label>Project<select value={existing?.id ?? ''} onChange={e => { setProjectId(e.target.value); setEffective(undefined); setConfirmChange(false) }}>
           <option value="">Create a new construction project</option>
           {eligible.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
         </select></label>
+        {existing && draft.staffing && <DateField calendar={calendar} value={staffingDate} label="Staffing effective date"
+          onChange={day => { setEffective(day); setConfirmChange(false) }}/>}
         {!existing && <>
           <DateField calendar={calendar} value={start} onChange={setStart} label="Project start"/>
           <div className="form-row">
@@ -326,6 +337,10 @@ export function EstimatePanel({ campaign, save, help }: Props) {
         </>}
         {proposalError && <p role="alert" className="warning">{proposalError}</p>}
         {proposal && <>
+          {proposedStaffing && <p>{proposedStaffing.remainingWeeks.toLocaleString(undefined, { maximumFractionDigits: 3 })} continuous workweeks remaining · {formatGp(proposedStaffing.adjustment)} remaining staffing adjustment
+            {proposedStaffing.retainedAllowance !== 0 && ` · ${formatGp(proposedStaffing.retainedAllowance)} retained from earlier plans`}.</p>}
+          {existing && draft.staffing && <p>Costs already posted: {formatGp(-holding.turns.flatMap(turn => turn.lines)
+            .filter(line => existing.costs.some(cost => cost.id === line.effectId)).reduce((sum, line) => sum + line.amount, 0))}.</p>}
           <p>Budget {existing && `${formatGp(existing.budget)} → `}{formatGp(proposal.budget)}</p>
           <p>Project work week: {proposal.workWeek} days.</p>
           <p>Total work days {existing && `${requiredWork(existing) / 2} → `}{requiredWork(proposal) / 2}. Remaining {Math.max(0, requiredWork(proposal) - proposal.progress.reduce((sum, item) => sum + item.pace, 0)) / 2}.</p>
@@ -349,6 +364,37 @@ export function EstimatePanel({ campaign, save, help }: Props) {
         <EstimateHistory snapshots={existing?.estimates} calendar={calendar}/>
       </>}
     </fieldset>}
+  </fieldset>
+}
+
+function StaffingFields({ estimate, labor, change }: { estimate: Estimate; labor: number; change: (plan?: StaffingPlan) => void }) {
+  const plan = estimate.staffing
+  const { standardCrew, paidCrew, effectiveCrew, workTimeModifier } = staffingSummary(estimate, labor)
+  const edit = (patch: Partial<StaffingPlan>) => change({ mode: '100', equivalents: 0, contributionNotes: '', compensation: 0, paidCrew: standardCrew, ...plan, ...patch })
+  return <fieldset className="form"><legend>Staffing and work seasons</legend>
+    <p>Standard crew: {standardCrew.toLocaleString()} (adjusted worker-weeks ÷ 52, rounded to a whole worker with a minimum of one).</p>
+    <p>Work Time Modifier: ×{workTimeModifier.toFixed(2)} · {(52 / workTimeModifier).toLocaleString(undefined, { maximumFractionDigits: 1 })} reference workweeks per year.
+      {workTimeModifier < 1 && ' Favorable conditions can increase productivity.'} Use dated closures and festival settings to schedule the project.</p>
+    <label>Staffing plan<select value={plan?.mode ?? ''} onChange={event => {
+      const mode = event.target.value as StaffingPlan['mode'] | ''
+      if (mode) edit({ mode })
+      else change(undefined)
+    }}>
+      <option value="">Manual estimate duration</option>
+      {Object.entries(staffingPresets).map(([mode, weeks]) => <option key={mode} value={mode}>{mode}% crew · {weeks} continuous weeks</option>)}
+      <option value="custom">Custom staffing, duration, and budget</option>
+    </select></label>
+    {plan && <>
+      {plan.mode === 'custom' && <label>Paid workers<input type="number" min="0" step="1" value={plan.paidCrew}
+        onChange={e => { if (Number.isSafeInteger(e.target.valueAsNumber) && e.target.valueAsNumber >= 0) edit({ paidCrew: e.target.valueAsNumber }) }}/></label>}
+      <label>Special worker equivalents<input type="number" min="0" step="1" value={plan.equivalents}
+        onChange={e => { if (Number.isSafeInteger(e.target.valueAsNumber) && e.target.valueAsNumber >= 0) edit({ equivalents: e.target.valueAsNumber }) }}/></label>
+      <label>Special worker contributions<input value={plan.contributionNotes} onChange={e => edit({ contributionNotes: e.target.value })}/></label>
+      <Decimal label="Agreed special worker compensation (gp)" value={plan.compensation} change={compensation => edit({ compensation: compensation ?? 0 })}/>
+      <p>{paidCrew.toLocaleString()} paid workers + {plan.equivalents.toLocaleString()} worker equivalents = {effectiveCrew.toLocaleString()} effective crew.</p>
+      <p>Budget adjustment uses the change from the standard paid crew at 10 gp per worker per continuous week, plus agreed compensation.</p>
+      {plan.mode === 'custom' && <p>Enter the duration, approved budget, and crew assumptions below.</p>}
+    </>}
   </fieldset>
 }
 
