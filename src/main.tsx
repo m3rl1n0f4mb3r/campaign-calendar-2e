@@ -13,6 +13,7 @@ import { DomainPanel, type ReceiptLink } from './DomainPanel'
 import { constructionEntries, dominionEntries, turnEntries } from './domain'
 import { ActionMenu } from './ActionMenu'
 import { CalendarEditor } from './CalendarEditor'
+import { militaryEntries } from './military'
 import { PrintCalendar } from './PrintCalendar'
 import type { PrintEntry } from './printing'
 import './style.css'
@@ -59,6 +60,7 @@ function App() {
   const [selected, setSelected] = useState(campaign.current)
   const [view, setView] = useState<View>('Month')
   const [panel, setPanel] = useState<Panel>()
+  const [militaryEntry, setMilitaryEntry] = useState<{ holdingId: string; unitId: string; day: number }>()
   const [constructionProject, setConstructionProject] = useState<{ holdingId: string; projectId: string }>()
   const [dominionEvent, setDominionEvent] = useState<{ holdingId: string; id: string }>()
   const [receipt, setReceipt] = useState<ReceiptLink>()
@@ -141,7 +143,7 @@ function App() {
   function open(next: Panel) {
     setPanel(next)
     setDraftDate(next === 'clock' ? campaign.current : selected)
-    if (next === 'domains') { setReceipt(undefined); setDominionEvent(undefined); setConstructionProject(undefined) }
+    if (next === 'domains') { setReceipt(undefined); setDominionEvent(undefined); setConstructionProject(undefined); setMilitaryEntry(undefined) }
     if (next === 'new') { setCampaignName(''); setPreset('generic') }
     if (next === 'search') { setSearchFrom(selected); setSearchTo(selected + 29) }
   }
@@ -200,6 +202,7 @@ function App() {
       entries.push({
         key: entryKey, title: entry.title, kind: 'turn', start: entry.day * minutes, end: (entry.day + 1) * minutes,
         render: (_, compact = false) => <button key={entryKey} className={compact ? 'event-chip domain-event' : 'event-item domain-event'} onClick={() => {
+          setMilitaryEntry(undefined)
           setConstructionProject(undefined)
           setDominionEvent(undefined)
           setReceipt(entry)
@@ -211,6 +214,7 @@ function App() {
       const entryKey = `dominion:${entry.holdingId}:${entry.id}`
       entries.push({ key: entryKey, title: entry.title, kind: 'dominion', start: entry.day * minutes, end: (entry.day + 1) * minutes,
         render: (_, compact = false) => <button key={entryKey} className={compact ? 'event-chip domain-event' : 'event-item domain-event'} onClick={() => {
+          setMilitaryEntry(undefined)
           setReceipt(undefined)
           setConstructionProject(undefined)
           setDominionEvent(entry)
@@ -222,10 +226,20 @@ function App() {
       const entryKey = `construction:${entry.holdingId}:${entry.projectId}:${entry.id}`
       entries.push({ key: entryKey, title: entry.title, kind: 'construction', start: entry.day * minutes, end: (entry.day + 1) * minutes,
         render: (_, compact = false) => <button key={entryKey} className={compact ? 'event-chip domain-event' : 'event-item domain-event'} onClick={() => {
+          setMilitaryEntry(undefined)
           setReceipt(undefined)
           setDominionEvent(undefined)
           setConstructionProject(entry)
           setPanel('domains')
+        }}><span>{entry.title}</span></button>,
+      })
+    }
+    for (const entry of militaryEntries(campaign.holdings ?? [], start, end, term)) {
+      const key = `military:${entry.holdingId}:${entry.id}`
+      entries.push({ key, title: entry.title, kind: 'military', start: entry.day * minutes, end: (entry.day + 1) * minutes,
+        render: (_, compact = false) => <button key={key} className={compact ? 'event-chip domain-event' : 'event-item domain-event'} onClick={() => {
+          open('domains')
+          setMilitaryEntry(entry)
         }}><span>{entry.title}</span></button>,
       })
     }

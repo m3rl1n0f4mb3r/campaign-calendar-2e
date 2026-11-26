@@ -4,6 +4,7 @@ const topics = {
   'get-started': 'Get started',
   'close-a-turn': 'Close a domain turn',
   'resolve-a-disaster': 'Resolve a disaster and apply its effect',
+  'military-expenses': 'Track garrisons and military expenses',
   'estimate-construction': 'Estimate a castle project',
   'track-construction': 'Track castle construction',
   'reopen-a-turn': 'Reopen and replay a turn',
@@ -80,6 +81,15 @@ export function UserGuide({ topic, onClose }: { topic: GuideTopic; onClose: () =
         <li>At month-end, open <strong>Preview turn</strong> and find the <strong>Construction</strong> section. The saved review appears in its project. Approve any work actually completed through the closing date. A full-month stoppage normally means no scheduled work is credited.</li>
         <li>Use <strong>Queue construction cost</strong> to add a proposed expense. Select it under <strong>Approved effects and project costs</strong> and record the turn. The project shows it as posted after confirmation.</li>
         <li>Reopening the domain turn retains the project’s work and event history. Select the proposed cost again if it still applies. Use the separate project reopen controls to correct a work entry or review.</li>
+      </ol>
+    </section>
+    <section aria-labelledby="military-expenses" hidden={topic !== 'get-started' && topic !== 'military-expenses'}>
+      <h3 id="military-expenses" tabIndex={-1}>{topics['military-expenses']}</h3>
+      <ol>
+        <li>Open <strong>Domain → Domain Play → Garrison roster</strong> for a holding. Muster a unit, choose its effective date and service terms, then save the roster.</li>
+        <li>Record dated deployments, arrivals, returns, losses, and releases. Use <strong>Roster date</strong> to review the unit's strength on a past or future date.</li>
+        <li>In the monthly turn, review <strong>Military expenses</strong>. Approve, skip, or defer pay and extra supplies. A mid-month change needs a GM-entered amount. A deferred charge keeps its original service dates.</li>
+        <li>When replaying a turn, review the original decisions and any charges that are no longer pending before recording it again.</li>
       </ol>
     </section>
     <section aria-labelledby="estimate-construction" hidden={topic !== 'get-started' && topic !== 'estimate-construction'}>
