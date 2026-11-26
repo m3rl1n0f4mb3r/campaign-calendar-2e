@@ -71,17 +71,33 @@ const line = z.object({
 }).refine(item => !item.module || item.quantity % 100 === 0, 'Catalog quantities must be whole')
 const finish = z.enum(['standard', 'ornate', 'spartan'])
 export const finishRates = { standard: 100, ornate: 150, spartan: 75 }
+export const staffingPresets = { '50': 208, '75': 104, '100': 52, '200': 39, '400': 26 } as const
+const staffingMode = z.enum(['50', '75', '100', '200', '400', 'custom'])
+const staffingSchema = z.object({
+  mode: staffingMode, equivalents: scaled, contributionNotes: z.string(), compensation: scaled,
+  paidCrew: scaled,
+})
+export type StaffingPlan = z.infer<typeof staffingSchema>
 export const estimateSchema = z.object({
   id, name: text, lines: z.array(line).refine(items => new Set(items.map(item => item.id)).size === items.length), finish,
   factors: z.object({ climate: z.string(), geography: z.string(), cover: z.string(), resources: z.string(), society: z.string(), skill: z.string(), morale: z.string() })
     .refine(values => factorKeys.every(key => values[key] === '' || factorOptions(key).some(([name]) => name === values[key]))),
   modifier: positive.optional(), modifierReason: z.string(),
-  approvedBudget: scaled.optional(), budgetReason: z.string(), duration: positive, assumptions: z.string(),
+  approvedBudget: scaled.optional(), budgetReason: z.string(), duration: positive, assumptions: z.string(), staffing: staffingSchema.optional(),
 })
 const step = z.object({ cost: z.string(), labor: z.string() })
 const resultSchema = z.object({ base: step, finished: step, overhead: step, calculatedModifier: positive, appliedModifier: positive, cost: scaled, labor: scaled })
+const staffingSnapshotSchema = z.object({
+  standardCrew: positive, paidCrew: scaled, effectiveCrew: scaled, remainingWeeks: z.number().positive(),
+  workTimeModifier: z.number().positive(), adjustment: z.number().int().safe(), retainedAllowance: z.number().int().safe(),
+  unfinished: z.object({ numerator: z.string().regex(/^\d+$/), denominator: z.string().regex(/^[1-9]\d*$/) }),
+  effective: day, approvedUnits: scaled, remainingUnits: positive, settledSetbackDays: scaled,
+})
+export type StaffingSnapshot = z.infer<typeof staffingSnapshotSchema>
+export type StaffingRevision = { effective: number; approvedUnits: number; requiredUnits: number; setbackDays: number; previous?: StaffingSnapshot }
+
 export const estimateSnapshotSchema = z.object({
-  id, estimate: estimateSchema, result: resultSchema, approvedAt: day, workWeek: positive, workDays: positive, budget: scaled,
+  id, estimate: estimateSchema, result: resultSchema, approvedAt: day, workWeek: positive, workDays: positive, budget: scaled, staffing: staffingSnapshotSchema.optional(),
 })
 export type Estimate = z.infer<typeof estimateSchema>
 export type EstimateLine = z.infer<typeof line>
@@ -116,7 +132,7 @@ export function calculateEstimate(estimate: Estimate) {
   const multiplier = BigInt(finishRates[draft.finish])
   const finished = { cost: totals.cost * multiplier, labor: totals.labor * multiplier }
   const overhead = { cost: finished.cost * 110n, labor: finished.labor * 110n }
-  const factors = factorKeys.map(key => factorOptions(key).find(([name]) => name === draft.factors[key])?.[1] ?? 100)
+  const factors = factorKeys.map(key => factorRate(draft, key))
   const product = factors.reduce((value, factor) => value * BigInt(factor), 1n)
   const calculatedModifier = safe(round(product, 100n ** BigInt(factors.length - 1)))
   const appliedModifier = draft.modifier ?? calculatedModifier
@@ -131,16 +147,82 @@ export function calculateEstimate(estimate: Estimate) {
   }
 }
 
-export function approveEstimate(estimate: Estimate, workWeek: number, approvedAt: number, snapshotId: string = crypto.randomUUID()): EstimateSnapshot {
+function factorRate(estimate: Estimate, key: FactorKey) {
+  return factorOptions(key).find(([name]) => name === estimate.factors[key])?.[1] ?? 100
+}
+
+export function staffingSummary(estimate: Estimate, labor: number) {
+  const standardCrew = Math.max(1, safe(round(BigInt(labor), 52n)))
+  const workTimeModifier = factorRate(estimate, 'climate') * factorRate(estimate, 'cover') / 10_000
+  const plan = estimate.staffing
+  const target = plan && plan.mode !== 'custom' ? Math.max(1, safe(round(BigInt(standardCrew) * BigInt(plan.mode), 100n))) : undefined
+  const paidCrew = target === undefined ? plan?.paidCrew ?? standardCrew : Math.max(0, target - (plan?.equivalents ?? 0))
+  return { standardCrew, paidCrew, effectiveCrew: paidCrew + (plan?.equivalents ?? 0), workTimeModifier }
+}
+
+function workFraction(revision?: StaffingRevision) {
+  if (!revision) return { numerator: 1n, denominator: 1n }
+  const { approvedUnits, requiredUnits, previous } = revision
+  const remaining = BigInt(Math.max(0, requiredUnits - approvedUnits))
+  if (!previous || approvedUnits < previous.approvedUnits) return { numerator: remaining, denominator: BigInt(requiredUnits) }
+  const numerator = BigInt(previous.unfinished.numerator) * remaining
+  const denominator = BigInt(previous.unfinished.denominator) * BigInt(Math.max(1, requiredUnits - previous.approvedUnits))
+  let divisor = denominator
+  let remainder = numerator
+  while (remainder) [divisor, remainder] = [remainder, divisor % remainder]
+  return { numerator: numerator / divisor, denominator: denominator / divisor }
+}
+
+function staffingApproval(estimate: Estimate, labor: number, workWeek: number, effective: number, revision?: StaffingRevision): StaffingSnapshot | undefined {
+  const plan = estimate.staffing
+  if (!plan) return
+  if (plan.equivalents && !plan.contributionNotes.trim()) throw new Error('Describe the special workers contributing to this plan.')
+  if (plan.mode === 'custom' && (estimate.approvedBudget === undefined || !estimate.assumptions.trim())) {
+    throw new Error('Enter a custom budget and explain the staffing and duration assumptions.')
+  }
+  const summary = staffingSummary(estimate, labor)
+  const approvedUnits = revision?.approvedUnits ?? 0
+  if (plan.mode !== 'custom' && revision && approvedUnits >= revision.requiredUnits) {
+    throw new Error('Choose custom staffing to reopen a completed project.')
+  }
+  const share = workFraction(revision && approvedUnits < revision.requiredUnits ? revision : undefined)
+  let numerator = BigInt(plan.mode === 'custom' ? estimate.duration : staffingPresets[plan.mode] * 100)
+  let denominator = 100n
+  if (plan.mode !== 'custom') {
+    numerator *= share.numerator
+    denominator *= share.denominator
+  }
+  const remainingDays = safe((numerator * BigInt(workWeek) + denominator - 1n) / denominator)
+  const remainingWeeks = Math.max(0.000001, safe(round(numerator * 1_000_000n, denominator)) / 1_000_000)
+  const payroll = BigInt(summary.paidCrew - summary.standardCrew) * numerator * 1_000n
+  const adjustment = safe((payroll < 0n ? -round(-payroll, denominator) : round(payroll, denominator)) + BigInt(plan.compensation))
+  const previous = revision?.previous
+  let retainedAllowance = 0
+  if (previous) {
+    const worked = Math.min(previous.remainingUnits, Math.max(0, approvedUnits - previous.approvedUnits))
+    const earned = BigInt(previous.adjustment) * BigInt(worked)
+    const units = BigInt(previous.remainingUnits)
+    retainedAllowance = safe(BigInt(previous.retainedAllowance) + (earned < 0n ? -round(-earned, units) : round(earned, units)))
+  }
+  return { ...summary, remainingWeeks, adjustment, retainedAllowance, effective, approvedUnits,
+    unfinished: { numerator: String(share.numerator), denominator: String(share.denominator) },
+    remainingUnits: remainingDays * 2, settledSetbackDays: revision?.setbackDays ?? 0 }
+}
+
+export function approveEstimate(estimate: Estimate, workWeek: number, approvedAt: number, snapshotId: string = crypto.randomUUID(), revision?: StaffingRevision, start = approvedAt): EstimateSnapshot {
   if (!estimate.lines.length || estimate.lines.some(item => !item.description.trim() || !item.unit.trim())) {
     throw new Error('Add at least one estimate line and give each line a description and unit.')
   }
   if (estimate.modifier !== undefined && !estimate.modifierReason.trim()) throw new Error('Enter a reason for the Production Modifier override.')
   const result = calculateEstimate(estimate)
-  if (estimate.approvedBudget !== undefined && estimate.approvedBudget !== result.cost && !estimate.budgetReason.trim()) {
+  const staffing = staffingApproval(estimate, result.labor, workWeek, revision?.effective ?? start, revision)
+  const calculatedBudget = staffing ? safe(BigInt(result.cost) + BigInt(staffing.adjustment) + BigInt(staffing.retainedAllowance)) : result.cost
+  if (estimate.approvedBudget !== undefined && estimate.approvedBudget !== calculatedBudget && !estimate.budgetReason.trim()) {
     throw new Error('Enter a reason for the budget override.')
   }
-  const workDays = safe((BigInt(estimate.duration) * BigInt(workWeek) + 99n) / 100n)
+  if (estimate.approvedBudget === undefined && calculatedBudget < 0) throw new Error('The staffing savings exceed the estimate. Enter an approved budget.')
+  const workDays = staffing ? Math.ceil((staffing.approvedUnits + staffing.remainingUnits) / 2)
+    : safe((BigInt(estimate.duration) * BigInt(workWeek) + 99n) / 100n)
   return estimateSnapshotSchema.parse({ id: snapshotId, estimate, result, approvedAt,
-    workWeek, workDays, budget: estimate.approvedBudget ?? result.cost })
+    workWeek, workDays, budget: estimate.approvedBudget ?? calculatedBudget, staffing })
 }
