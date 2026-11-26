@@ -14,7 +14,7 @@ const review = z.object({
   id, month, roll: die.optional(), incident: day.optional(), setbackDice: z.array(z.number().int().min(1).max(4)).length(2).optional(),
   extraDays: days.optional(), notes: z.string(),
 })
-const cost = z.object({
+export const projectCostSchema = z.object({
   id, source: id, title: z.string().trim().min(1).max(120), target: month,
   category: z.literal('general'), balance: z.enum(['cash', 'noncash']), amount: z.number().int().safe().negative(),
 })
@@ -24,7 +24,7 @@ export const projectSchema = z.object({
   workWeekLocked: z.boolean().optional(), estimates: z.array(estimateSnapshotSchema).optional(),
   festivalPace: pace, festivalOverrides: z.array(range), stops: z.array(range),
   progress: z.array(z.object({ day, pace })), reviews: z.array(review), reopened: z.array(review),
-  costs: z.array(cost), canceled: day.optional(),
+  costs: z.array(projectCostSchema), canceled: day.optional(),
 })
 export type Project = z.infer<typeof projectSchema>
 export type ProjectReview = z.infer<typeof review>

@@ -8,13 +8,15 @@ import {
 import { closingDay, dueMonth, formatGp, monthAt, sameMonth, type Holding, type TurnMonth } from './domain'
 import { DateField } from './DateField'
 
+export type InitialConfidenceCheck = { id: string; day: number; title: string }
+
 type Props = {
-  calendar: Calendar; clock: number; holding: Holding; revision: string | null; selectedEvent?: string
+  calendar: Calendar; clock: number; holding: Holding; revision: string | null; selectedEvent?: string; initialCheck?: InitialConfidenceCheck
   help: () => void
   save: (holding: Holding) => Promise<boolean>; back: () => void; openReceipt: (month: TurnMonth) => void; reopen: (month: TurnMonth) => void
 }
 
-export function ConfidencePanel({ calendar, clock, holding, revision, selectedEvent, save, back, openReceipt, reopen, help }: Props) {
+export function ConfidencePanel({ calendar, clock, holding, revision, selectedEvent, initialCheck, save, back, openReceipt, reopen, help }: Props) {
   const state = holding.confidence ?? initialConfidence()
   const start = dateIndex(calendar, { ...holding.first, day: 1 })
   const due = nextReview(calendar, start, state)
@@ -34,13 +36,14 @@ export function ConfidencePanel({ calendar, clock, holding, revision, selectedEv
   const [abilities, setAbilities] = useState(state.baseRoll?.abilities ?? Array<number>(6).fill(10))
   const [baseRoll, setBaseRoll] = useState<Confidence['baseRoll']>(state.baseRoll)
   const [editing, setEditing] = useState<DominionEvent>()
-  const [trigger, setTrigger] = useState<Exclude<ConfidenceCheck['trigger'], 'annual'>>('other')
+  const [trigger, setTrigger] = useState<Exclude<ConfidenceCheck['trigger'], 'annual'>>(initialCheck ? 'enemy' : 'other')
   const [eventSource, setEventSource] = useState('')
-  const [checkDate, setCheckDate] = useState(clock)
+  const [checkDate, setCheckDate] = useState(initialCheck?.day ?? clock)
   const [change, setChange] = useState(0)
   const [modifier, setModifier] = useState(0)
-  const [notes, setNotes] = useState('')
-  const [checkOpen, setCheckOpen] = useState(false)
+  const [notes, setNotes] = useState(initialCheck?.title ?? '')
+  const [checkOpen, setCheckOpen] = useState(!!initialCheck && !state.checks.some(item => item.id === initialCheck.id))
+  const [linkedCheck, setLinkedCheck] = useState(initialCheck)
   const [options, setOptions] = useState(() => state.eventOptions ?? eventOptions())
   const [custom, setCustom] = useState<EventOption>()
   const optionsChanged = JSON.stringify(options) !== JSON.stringify(state.eventOptions ?? eventOptions())
@@ -89,6 +92,7 @@ export function ConfidencePanel({ calendar, clock, holding, revision, selectedEv
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not record the review.') }
   }
   function startCheck(event?: DominionEvent) {
+    setLinkedCheck(undefined)
     setTrigger(event ? 'disaster' : 'other')
     setEventSource(event?.id ?? '')
     setCheckDate(event?.resolvedDay ?? clock)
@@ -205,8 +209,8 @@ export function ConfidencePanel({ calendar, clock, holding, revision, selectedEv
         e.preventDefault()
         if ((exceedsGuideline && !approveGuideline) || checkDate > clock) return
         try {
-          void commit(recordCheck(state, { id: crypto.randomUUID(), day: checkDate, trigger, eventId: eventSource || undefined,
-            modifier, change, notes }), () => setCheckOpen(false))
+          void commit(recordCheck(state, { id: linkedCheck?.id ?? crypto.randomUUID(), day: checkDate, trigger, eventId: eventSource || undefined,
+            modifier, change, notes }), () => { setCheckOpen(false); setLinkedCheck(undefined) })
         } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not record confidence.') }
       }}>
         <label>Trigger<select value={trigger} onChange={e => setTrigger(e.target.value as typeof trigger)}>
@@ -224,7 +228,7 @@ export function ConfidencePanel({ calendar, clock, holding, revision, selectedEv
         <div className="button-group"><button type="button" onClick={() => setCheckOpen(false)}>Cancel</button>
           <button className="primary" disabled={checkDate > clock || (exceedsGuideline && !approveGuideline)}>Record check and lasting change</button></div>
       </form>}
-      {!!state.checks.length && <details><summary>Confidence history</summary><ul>
+      {!!state.checks.length && <details open={!!initialCheck && !checkOpen || undefined}><summary>Confidence history</summary><ul>
         {[...state.checks].reverse().map(item => <li key={item.id}>{dateLabel(calendar, item.day)} · {triggerLabels[item.trigger]} · {item.score} ({item.band})
           {item.change !== 0 && ` · lasting change ${item.change > 0 ? '+' : ''}${item.change}`}
           {item.modifier !== 0 && ` · check modifier ${item.modifier > 0 ? '+' : ''}${item.modifier}`}

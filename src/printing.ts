@@ -7,6 +7,7 @@ export const printKinds = {
   dominion: 'Dominion events',
   construction: 'Construction milestones',
   military: 'Garrison changes',
+  engagement: 'Battles and sieges',
 }
 export type PrintKind = keyof typeof printKinds
 export type PrintEntry = { key: string; title: string; start: number; end: number; kind: PrintKind; time?: string; location?: string }
