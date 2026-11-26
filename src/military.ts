@@ -20,7 +20,7 @@ const rosterChange = z.discriminatedUnion('kind', [
   changeBase.extend({ kind: z.literal('arrival'), location }),
   changeBase.extend({ kind: z.literal('deployment'), location, billing }),
   changeBase.extend({ kind: z.literal('return'), location }),
-  changeBase.extend({ kind: z.literal('correction'), delta: z.number().int().safe() }),
+  changeBase.extend({ kind: z.literal('correction'), delta: z.number().int().safe(), corrects: id.optional() }),
   changeBase.extend({ kind: z.literal('terms'), terms }),
   changeBase.extend({ kind: z.literal('release') }),
 ])
@@ -53,6 +53,7 @@ export const emptyMilitary = (): Military => ({ units: [], supplies: [] })
 export function rosterHistory(unit: Unit): History[] {
   let state: UnitState | undefined
   let released = false
+  const corrections = new Set<string>()
   return [...unit.changes].sort((a, b) => a.day - b.day).map(change => {
     if (change.kind === 'muster') {
       if (state) throw new Error('A unit can muster once.')
@@ -64,7 +65,11 @@ export function rosterHistory(unit: Unit): History[] {
         case 'deployment': state = { ...state, location: change.location, billing: change.billing }; break
         case 'return': state = { ...state, location: change.location, billing: 'home' }; break
         case 'terms': state = { ...state, terms: change.terms }; break
-        case 'correction': state = { ...state, strength: state.strength + change.delta }; break
+        case 'correction':
+          if (change.corrects && !corrections.has(change.corrects)) throw new Error('Date the correction on or after its linked roster change.')
+          corrections.add(change.id)
+          state = { ...state, strength: state.strength + change.delta }
+          break
         case 'release': state = { ...state, strength: 0 }; released = true; break
       }
     }

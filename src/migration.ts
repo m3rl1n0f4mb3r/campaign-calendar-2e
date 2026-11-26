@@ -2,6 +2,7 @@ import { dateIndex, dateLabel, dateParts, moonPhase, mod, phaseNames, weekday, t
 import { dayOf, hasOccurrence, minutes, occurrences, type EventData } from './events'
 import type { Campaign } from './storage'
 import { forecast, validProjects } from './construction'
+import { engagementSchema, validEngagements } from './engagement'
 import { yearStart } from './confidence'
 import { closingDay, dueMonth, validHoldings, type TurnInputs, type TurnMonth } from './domain'
 
@@ -73,6 +74,7 @@ export function migrate(campaign: Campaign, next: Calendar) {
     }
     for (const turn of holding.turns) compareMonth('recorded turn', turn.month)
     for (const draft of holding.replay) compareMonth('reopened turn', draft.month)
+    for (const expense of holding.engagementExpenses ?? []) compareMonth(expense.title, expense.target)
     for (const effect of holding.confidence?.effects ?? []) compareMonth(effect.title, effect.target)
     if (validHoldings(next, [holding])) {
       compareMonth('next turn', dueMonth(old, holding), dueMonth(next, holding))
@@ -160,6 +162,20 @@ export function migrate(campaign: Campaign, next: Calendar) {
     }
     return { ...projectHolding, confidence }
   })
+  const engagements = campaign.engagements?.map(item => {
+    const moved = { ...item, start: day(item.start, `${item.title} start`),
+      end: item.end === undefined ? undefined : day(item.end, `${item.title} end`),
+      consequences: item.consequences.map(effect => {
+        const effective = day(effect.day, `${item.title} ${effect.kind} date`)
+        return effect.kind === 'expense'
+          ? { ...effect, day: effective, prior: effect.prior?.map(entry => ({ ...entry, day: day(entry.day, `${entry.title} prior expense date`) })) }
+          : { ...effect, day: effective }
+      }),
+    }
+    if (!engagementSchema.safeParse(moved).success) errors.push(`${item.title} would have invalid engagement dates after migration.`)
+    return moved
+  })
+  if (engagements && !errors.length && !validEngagements(engagements, holdings ?? [])) errors.push('A linked engagement consequence could not be migrated.')
   if (!errors.length && events.some(event => event.rule)) {
     const before = occurrences(old, campaign.events.filter(event => event.rule), campaign.current, campaign.current + 30)
     const after = occurrences(next, events.filter(event => event.rule), current, current + 30)
@@ -169,5 +185,5 @@ export function migrate(campaign: Campaign, next: Calendar) {
       changes.push(`${label}: ${summary || 'No occurrences'}${results.length > 10 ? ` (+${results.length - 10} more)` : ''}`)
     }
   }
-  return { campaign: { ...campaign, current, calendar: { ...next, moons }, events, ...(holdings ? { holdings } : {}) }, changes, errors, affected }
+  return { campaign: { ...campaign, current, calendar: { ...next, moons }, events, ...(holdings ? { holdings } : {}), ...(engagements ? { engagements } : {}) }, changes, errors, affected }
 }

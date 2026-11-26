@@ -4,6 +4,7 @@ const topics = {
   'get-started': 'Get started',
   'close-a-turn': 'Close a domain turn',
   'resolve-a-disaster': 'Resolve a disaster and apply its effect',
+  'battle-siege-records': 'Record a battle or siege',
   'military-expenses': 'Track garrisons and military expenses',
   'estimate-construction': 'Estimate a castle project',
   'track-construction': 'Track castle construction',
@@ -81,6 +82,14 @@ export function UserGuide({ topic, onClose }: { topic: GuideTopic; onClose: () =
         <li>At month-end, open <strong>Preview turn</strong> and find the <strong>Construction</strong> section. The saved review appears in its project. Approve any work actually completed through the closing date. A full-month stoppage normally means no scheduled work is credited.</li>
         <li>Use <strong>Queue construction cost</strong> to add a proposed expense. Select it under <strong>Approved effects and project costs</strong> and record the turn. The project shows it as posted after confirmation.</li>
         <li>Reopening the domain turn retains the project’s work and event history. Select the proposed cost again if it still applies. Use the separate project reopen controls to correct a work entry or review.</li>
+      </ol>
+    </section>
+    <section aria-labelledby="battle-siege-records" hidden={topic !== 'get-started' && topic !== 'battle-siege-records'}>
+      <h3 id="battle-siege-records" tabIndex={-1}>{topics['battle-siege-records']}</h3>
+      <ol>
+        <li>Open <strong>Domain → Battles and sieges</strong>. Enter the dates, participants, and outcome from play at the table. A siege without an end date appears in <strong>Active sieges</strong> while browsing dates on or after its start.</li>
+        <li>Save the engagement, then propose consequences individually. Review the dated unit strength before approving a roster change. Link a repair project and any existing cost, or propose a separate one-off expense.</li>
+        <li>Approve an expense in its target turn. For confidence, open the proposed review and decide whether to record a check. Use the linked roster, project, or receipt to correct applied consequences.</li>
       </ol>
     </section>
     <section aria-labelledby="military-expenses" hidden={topic !== 'get-started' && topic !== 'military-expenses'}>

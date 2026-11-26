@@ -6,14 +6,14 @@ import { militarySchema, rosterHistory, rosterLabels, validMilitary,
   type Billing, type Military, type RosterChange, type Supply, type Terms, type Unit } from './military'
 
 type Props = {
-  calendar: Calendar; clock: number; holding: Holding; military: Military; initialDay?: number; selectedUnit?: string
+  calendar: Calendar; clock: number; holding: Holding; military: Military; initialDay?: number; selectedUnit?: string; correction?: string
   change: (value: Military) => void; help: () => void
 }
 const defaultTerms: Terms = { service: 'unpaid', rateType: 'unit', rate: 0 }
 
-export function MilitaryPanel({ calendar, clock, holding, military, initialDay, selectedUnit, change, help }: Props) {
+export function MilitaryPanel({ calendar, clock, holding, military, initialDay, selectedUnit, correction, change, help }: Props) {
   const [day, setDay] = useState(initialDay ?? clock)
-  const [edit, setEdit] = useState<'muster' | 'supply' | Unit>()
+  const [edit, setEdit] = useState<'muster' | 'supply' | Unit | undefined>(() => correction ? military.units.find(unit => unit.id === selectedUnit) : undefined)
   const [error, setError] = useState('')
   const [showArchived, setShowArchived] = useState(!!selectedUnit)
   const date = (value: number) => dateLabel(calendar, value)
@@ -67,7 +67,7 @@ export function MilitaryPanel({ calendar, clock, holding, military, initialDay, 
             {unit.archived ? 'Unarchive unit' : 'Archive unit'}
           </button>}
         </div>
-        {isEditing && <RosterEditor key={unit.id} calendar={calendar} from={day} unit={unit}
+        {isEditing && <RosterEditor key={unit.id} calendar={calendar} from={day} unit={unit} correction={correction && selectedUnit === unit.id ? correction : undefined}
           previousTerms={state?.terms} currentLocation={state?.location} cancel={() => setEdit(undefined)}
           submit={entry => apply({ ...military, units: military.units.map(item =>
             item.id === unit.id ? { ...item, changes: [...item.changes, entry] } : item) })}/>}
@@ -83,11 +83,11 @@ export function MilitaryPanel({ calendar, clock, holding, military, initialDay, 
   </div>
 }
 
-function RosterEditor({ calendar, from, unit, previousTerms, currentLocation, submit, cancel }: {
-  calendar: Calendar; from: number; unit?: Unit; previousTerms?: Terms; currentLocation?: string
+function RosterEditor({ calendar, from, unit, previousTerms, currentLocation, correction, submit, cancel }: {
+  calendar: Calendar; from: number; unit?: Unit; previousTerms?: Terms; currentLocation?: string; correction?: string
   submit: (change: RosterChange, identity?: Pick<Unit, 'name' | 'type'>) => void; cancel: () => void
 }) {
-  const [kind, setKind] = useState<RosterChange['kind']>(unit ? 'arrival' : 'muster')
+  const [kind, setKind] = useState<RosterChange['kind']>(correction ? 'correction' : unit ? 'arrival' : 'muster')
   const [day, setDay] = useState(from)
   const [name, setName] = useState('')
   const [type, setType] = useState('')
@@ -103,12 +103,12 @@ function RosterEditor({ calendar, from, unit, previousTerms, currentLocation, su
       case 'muster': if (strength) submit({ ...base, kind, strength, location, terms }, { name, type }); break
       case 'arrival': case 'return': submit({ ...base, kind, location }); break
       case 'deployment': submit({ ...base, kind, location, billing }); break
-      case 'correction': if (strength !== undefined) submit({ ...base, kind, delta: strength }); break
+      case 'correction': if (strength !== undefined) submit({ ...base, kind, delta: strength, corrects: correction }); break
       case 'terms': submit({ ...base, kind, terms }); break
       case 'release': submit({ ...base, kind }); break
     }
   }}>
-    {unit ? <label>Roster change<select value={kind} onChange={e => setKind(e.target.value as RosterChange['kind'])}>
+    {correction ? <p>Correct the linked engagement change by entering the additional signed adjustment.</p> : unit ? <label>Roster change<select value={kind} onChange={e => setKind(e.target.value as RosterChange['kind'])}>
       {Object.entries(rosterLabels).filter(([entry]) => entry !== 'muster').map(([value, name]) => <option key={value} value={value}>{name}</option>)}
     </select></label> : <div className="form-row">
       <label>Unit name<input required maxLength={120} value={name} onChange={e => setName(e.target.value)}/></label>

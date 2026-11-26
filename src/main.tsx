@@ -13,13 +13,15 @@ import { DomainPanel, type ReceiptLink } from './DomainPanel'
 import { constructionEntries, dominionEntries, turnEntries } from './domain'
 import { ActionMenu } from './ActionMenu'
 import { CalendarEditor } from './CalendarEditor'
+import { activeSieges, engagementEntries } from './engagement'
+import { EngagementPanel, type EngagementLink } from './EngagementPanel'
 import { militaryEntries } from './military'
 import { PrintCalendar } from './PrintCalendar'
 import type { PrintEntry } from './printing'
 import './style.css'
 
 type View = 'Month' | 'Week' | 'Day' | 'Agenda'
-type Panel = 'new' | 'calendar' | 'event' | 'jump' | 'clock' | 'data' | 'delete' | 'search' | 'domains' | 'estimates' | 'print'
+type Panel = 'new' | 'calendar' | 'event' | 'jump' | 'clock' | 'data' | 'delete' | 'search' | 'domains' | 'estimates' | 'print' | 'engagements'
 const views: View[] = ['Month', 'Week', 'Day', 'Agenda']
 
 function initialize() {
@@ -60,7 +62,9 @@ function App() {
   const [selected, setSelected] = useState(campaign.current)
   const [view, setView] = useState<View>('Month')
   const [panel, setPanel] = useState<Panel>()
-  const [militaryEntry, setMilitaryEntry] = useState<{ holdingId: string; unitId: string; day: number }>()
+  const [militaryEntry, setMilitaryEntry] = useState<{ holdingId: string; unitId: string; day: number; correction?: string }>()
+  const [engagementSelection, setEngagementSelection] = useState<{ id?: string; holdingId?: string }>()
+  const [confidenceReview, setConfidenceReview] = useState<Extract<EngagementLink, { kind: 'confidence' }>>()
   const [constructionProject, setConstructionProject] = useState<{ holdingId: string; projectId: string }>()
   const [dominionEvent, setDominionEvent] = useState<{ holdingId: string; id: string }>()
   const [receipt, setReceipt] = useState<ReceiptLink>()
@@ -75,7 +79,7 @@ function App() {
   const restoreRequest = useRef(0)
   const [preset, setPreset] = useState('generic')
   const [campaignName, setCampaignName] = useState('')
-  const dialogTitle = { new: 'New campaign', calendar: 'Calendar settings', event: editing ? 'Edit event' : 'New event', jump: 'Jump to date', clock: 'Set campaign date', data: 'Campaign data', delete: 'Delete campaign', search: 'Search events', domains: 'Domain Play', estimates: 'Castle estimates', print: 'Print calendar' }
+  const dialogTitle = { new: 'New campaign', calendar: 'Calendar settings', event: editing ? 'Edit event' : 'New event', jump: 'Jump to date', clock: 'Set campaign date', data: 'Campaign data', delete: 'Delete campaign', search: 'Search events', domains: 'Domain Play', estimates: 'Castle estimates', print: 'Print calendar', engagements: 'Battles and sieges' }
 
   function syncSaved(value: string | null) {
     setRaw(value)
@@ -143,9 +147,22 @@ function App() {
   function open(next: Panel) {
     setPanel(next)
     setDraftDate(next === 'clock' ? campaign.current : selected)
-    if (next === 'domains') { setReceipt(undefined); setDominionEvent(undefined); setConstructionProject(undefined); setMilitaryEntry(undefined) }
+    if (next === 'domains') { setReceipt(undefined); setDominionEvent(undefined); setConstructionProject(undefined); setMilitaryEntry(undefined); setConfidenceReview(undefined) }
     if (next === 'new') { setCampaignName(''); setPreset('generic') }
     if (next === 'search') { setSearchFrom(selected); setSearchTo(selected + 29) }
+  }
+  function openEngagement(id?: string, holdingId?: string) {
+    setEngagementSelection({ id, holdingId })
+    open('engagements')
+  }
+  function openEngagementLink(link: EngagementLink) {
+    open('domains')
+    switch (link.kind) {
+      case 'troops': setMilitaryEntry(link); break
+      case 'repair': setConstructionProject(link); break
+      case 'expense': setReceipt(link); break
+      case 'confidence': setConfidenceReview(link); break
+    }
   }
   function openEvent(event?: Occurrence, day = selected) {
     setSelected(day)
@@ -202,6 +219,7 @@ function App() {
       entries.push({
         key: entryKey, title: entry.title, kind: 'turn', start: entry.day * minutes, end: (entry.day + 1) * minutes,
         render: (_, compact = false) => <button key={entryKey} className={compact ? 'event-chip domain-event' : 'event-item domain-event'} onClick={() => {
+          setConfidenceReview(undefined)
           setMilitaryEntry(undefined)
           setConstructionProject(undefined)
           setDominionEvent(undefined)
@@ -214,6 +232,7 @@ function App() {
       const entryKey = `dominion:${entry.holdingId}:${entry.id}`
       entries.push({ key: entryKey, title: entry.title, kind: 'dominion', start: entry.day * minutes, end: (entry.day + 1) * minutes,
         render: (_, compact = false) => <button key={entryKey} className={compact ? 'event-chip domain-event' : 'event-item domain-event'} onClick={() => {
+          setConfidenceReview(undefined)
           setMilitaryEntry(undefined)
           setReceipt(undefined)
           setConstructionProject(undefined)
@@ -226,6 +245,7 @@ function App() {
       const entryKey = `construction:${entry.holdingId}:${entry.projectId}:${entry.id}`
       entries.push({ key: entryKey, title: entry.title, kind: 'construction', start: entry.day * minutes, end: (entry.day + 1) * minutes,
         render: (_, compact = false) => <button key={entryKey} className={compact ? 'event-chip domain-event' : 'event-item domain-event'} onClick={() => {
+          setConfidenceReview(undefined)
           setMilitaryEntry(undefined)
           setReceipt(undefined)
           setDominionEvent(undefined)
@@ -243,9 +263,17 @@ function App() {
         }}><span>{entry.title}</span></button>,
       })
     }
+    for (const entry of engagementEntries(campaign.engagements ?? [], start, end, term)) {
+      const key = `engagement:${entry.key}`
+      entries.push({ key, title: entry.title, kind: 'engagement', start: entry.day * minutes, end: (entry.day + 1) * minutes, location: entry.location,
+        render: (_, compact = false) => <button key={key} className={compact ? 'event-chip domain-event' : 'event-item domain-event'}
+          onClick={() => openEngagement(entry.engagementId)}><span>{entry.title}</span></button>,
+      })
+    }
     return entries.sort((a, b) => a.start - b.start)
   }
   const entries = calendarEntries(list, from, to, search?.query)
+  const sieges = activeSieges(campaign.engagements ?? [], selected)
   const selectedEntries = calendarEntries(selectedEvents, selected, selected + 1)
   const moonList = (day: number) => <ul className="calendar-moons" aria-label="Moon phases">{cal.moons.map((moon, index) => {
     const phase = moonPhase(moon, day)
@@ -292,6 +320,7 @@ function App() {
         </>}</ActionMenu>
         <ActionMenu label="Domain">{choose => <>
           <button type="button" onClick={() => choose(() => open('domains'))}>Domain Play</button>
+          <button type="button" onClick={() => choose(() => openEngagement())}>Battles and sieges</button>
           <button type="button" onClick={() => choose(() => open('estimates'))}>Castle estimates</button>
         </>}</ActionMenu>
         <button onClick={() => openGuide('get-started')}>Help</button>
@@ -358,6 +387,8 @@ function App() {
           const phase = moonPhase(moon, selected)
           return <div className="moon" key={index}><span aria-hidden="true" style={{ color: moonColor(moon, index) }}>{phaseSymbols[phase]}</span><div><strong>{moon.name}</strong><small>{phaseNames[phase]}</small></div></div>
         })}</section>}
+        {!!sieges.length && <section><h3>Active sieges</h3>{sieges.map(item =>
+          <button key={item.id} className="event-item domain-event" onClick={() => openEngagement(item.id)}>{item.title}</button>)}</section>}
         <section><h3>Events</h3>{selectedEntries.length ? selectedEntries.map(entry => entry.render(selected)) : <p className="muted">No events on this date.</p>}</section>
       </aside>
     </main>
@@ -370,7 +401,9 @@ function App() {
           : { from, to, title: `${search ? 'Search results' : view} · ${printRange}`, grid: weekGrid }}
         entries={(start, end, query) => calendarEntries(occurrences(cal, campaign.events, start, end, query), start, end, query)}/>}
       {panel === 'estimates' && <EstimatePanel campaign={campaign} save={saveCampaign} help={() => openGuide('estimate-construction')}/>}
-      {panel === 'domains' && <DomainPanel campaign={campaign} revision={raw} receipt={receipt} dominionEvent={dominionEvent} constructionProject={constructionProject} help={openGuide} backup={backup} save={holdings => saveCampaign({ ...campaign, holdings })}/>}
+      {panel === 'engagements' && <EngagementPanel campaign={campaign} revision={raw} selected={selected} initialId={engagementSelection?.id}
+        initialHolding={engagementSelection?.holdingId} save={saveCampaign} openLink={openEngagementLink} help={() => openGuide('battle-siege-records')}/>}
+      {panel === 'domains' && <DomainPanel campaign={campaign} revision={raw} receipt={receipt} dominionEvent={dominionEvent} constructionProject={constructionProject} militaryEntry={militaryEntry} confidenceReview={confidenceReview} openEngagements={holdingId => openEngagement(undefined, holdingId)} help={openGuide} backup={backup} save={holdings => saveCampaign({ ...campaign, holdings })}/>}
       {panel === 'event' && <EventEditor calendar={cal} day={selected} event={editing} save={saveEvent} close={close}/>}
       {panel === 'calendar' && <CalendarEditor campaign={campaign} close={close} backup={backup} save={async next => {
         if (await saveCampaign(next)) { setSelected(next.current); setSearch(undefined); close() }

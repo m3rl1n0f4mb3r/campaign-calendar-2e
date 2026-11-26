@@ -5,7 +5,7 @@ import { closingDay, dueMonth, formatGp, monthAt, territoryPopulation, previewTu
 import type { GuideTopic } from './UserGuide'
 import { ConstructionPanel } from './ConstructionPanel'
 import type { Project } from './construction'
-import { ConfidencePanel } from './ConfidencePanel'
+import { ConfidencePanel, type InitialConfidenceCheck } from './ConfidencePanel'
 import { MilitaryPanel } from './MilitaryPanel'
 import { MilitaryDecisionSummary, MilitaryExpenses } from './MilitaryExpenses'
 import { emptyMilitary, militaryConflicts, militaryReceiptChanged, validateMilitaryTurn, type Military } from './military'
@@ -17,7 +17,9 @@ type Props = {
   revision: string | null
   receipt?: ReceiptLink
   dominionEvent?: { holdingId: string; id: string }
-  militaryEntry?: { holdingId: string; unitId: string; day: number }
+  militaryEntry?: { holdingId: string; unitId: string; day: number; correction?: string }
+  confidenceReview?: InitialConfidenceCheck & { holdingId: string }
+  openEngagements: (holdingId: string) => void
   constructionProject?: { holdingId: string; projectId: string }
   save: (holdings: Holding[]) => Promise<boolean>
   help: (topic: GuideTopic) => void
@@ -25,8 +27,8 @@ type Props = {
 }
 type Screen =
   | { type: 'construction'; id: string; projects: Project[]; selectedProject?: string; revision: Props['revision'] }
-  | { type: 'military'; id: string; draft: Military; selectedUnit?: string; day?: number; revision: Props['revision'] }
-  | { type: 'confidence'; id: string; selectedEvent?: string }
+  | { type: 'military'; id: string; draft: Military; selectedUnit?: string; day?: number; correction?: string; revision: Props['revision'] }
+  | { type: 'confidence'; id: string; selectedEvent?: string; initialCheck?: InitialConfidenceCheck }
   | { type: 'holding'; draft: Holding; revision: Props['revision'] }
   | { type: 'preview'; id: string; month: TurnMonth; draft: TurnInputs; revision: Props['revision']; projects?: Project[]; reset?: boolean }
   | { type: 'receipt'; link: ReceiptLink }
@@ -182,11 +184,12 @@ function Ledger({ turn }: { turn: Receipt }) {
   </table></div>
 }
 
-export function DomainPanel({ campaign, revision, receipt, dominionEvent, constructionProject, militaryEntry, save, backup, help }: Props) {
+export function DomainPanel({ campaign, revision, receipt, dominionEvent, constructionProject, militaryEntry, confidenceReview, openEngagements, save, backup, help }: Props) {
   const [screen, setScreen] = useState<Screen | undefined>(receipt ? { type: 'receipt', link: receipt } : dominionEvent ? { type: 'confidence', id: dominionEvent.holdingId, selectedEvent: dominionEvent.id }
     : constructionProject ? { type: 'construction', id: constructionProject.holdingId, selectedProject: constructionProject.projectId,
       projects: campaign.holdings?.find(item => item.id === constructionProject.holdingId)?.projects ?? [], revision }
-    : militaryEntry ? { type: 'military', id: militaryEntry.holdingId, selectedUnit: militaryEntry.unitId, day: militaryEntry.day, revision,
+    : confidenceReview ? { type: 'confidence', id: confidenceReview.holdingId, initialCheck: confidenceReview }
+    : militaryEntry ? { type: 'military', id: militaryEntry.holdingId, selectedUnit: militaryEntry.unitId, day: militaryEntry.day, correction: militaryEntry.correction, revision,
       draft: campaign.holdings?.find(item => item.id === militaryEntry.holdingId)?.military ?? emptyMilitary() }
     : undefined)
   const [pending, setPending] = useState(false)
@@ -227,7 +230,7 @@ export function DomainPanel({ campaign, revision, receipt, dominionEvent, constr
     return <div className="form">
       {stale ? <p className="warning" role="alert">Campaign data changed. Return to holdings and reopen the roster.</p>
         : <MilitaryPanel calendar={calendar} clock={current} holding={holding} military={screen.draft} initialDay={screen.day}
-          selectedUnit={screen.selectedUnit} change={draft => setScreen({ ...screen, draft })} help={() => help('military-expenses')}/>}
+          selectedUnit={screen.selectedUnit} correction={screen.correction} change={draft => setScreen({ ...screen, draft })} help={() => help('military-expenses')}/>}
       <div className="actions">{back}<button className="primary" disabled={!changed || pending || stale}
         onClick={() => void persist({ ...holding, military: screen.draft })}>Save roster and expenses</button></div>
     </div>
@@ -257,7 +260,7 @@ export function DomainPanel({ campaign, revision, receipt, dominionEvent, constr
     const holding = holdings.find(item => item.id === screen.id)
     if (!holding) return <div className="form"><p>This holding is no longer available.</p>{back}</div>
     return <ConfidencePanel calendar={calendar} clock={current} holding={holding} revision={revision}
-      selectedEvent={screen.selectedEvent} help={() => help('resolve-a-disaster')} back={() => go()}
+      selectedEvent={screen.selectedEvent} initialCheck={screen.initialCheck} help={() => help('resolve-a-disaster')} back={() => go()}
       openReceipt={month => go({ type: 'receipt', link: { holdingId: holding.id, month } })}
       reopen={month => go({ type: 'reopen', link: { holdingId: holding.id, month }, revision })}
       save={next => save(holdings.map(item => item.id === next.id ? next : item))}/>
@@ -513,6 +516,7 @@ export function DomainPanel({ campaign, revision, receipt, dominionEvent, constr
         <div className="button-group">
           <button onClick={() => startHolding(holding)}>Edit holding</button>
           <button onClick={() => go({ type: 'construction', id: holding.id, projects: holding.projects ?? [], revision })}>Construction projects</button>
+          <button onClick={() => openEngagements(holding.id)}>Battles and sieges</button>
           <button onClick={() => go({ type: 'military', id: holding.id, draft: holding.military ?? emptyMilitary(), revision })}>Garrison roster</button>
           <button onClick={() => go({ type: 'confidence', id: holding.id })}>Confidence and events</button>
           <button disabled={closingDay(calendar, next) > current} onClick={() => startPreview(holding)}>Preview turn</button>

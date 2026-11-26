@@ -1,5 +1,5 @@
 import { militaryChargeState, militaryInputsSchema, militarySchema, validMilitary, validateMilitaryTurn } from './military'
-import { confirmedCompletion, constructionOutcome, forecast, projectSchema, validProjects } from './construction'
+import { projectCostSchema, confirmedCompletion, constructionOutcome, forecast, projectSchema, validProjects } from './construction'
 import { z } from 'zod'
 import { dateIndex, dateParts, movePeriod, type Calendar } from './calendar'
 import { confidenceSchema, type DomainEffect } from './confidence'
@@ -53,6 +53,7 @@ export const holdingSchema = z.object({
   confidence: confidenceSchema.optional(),
   military: militarySchema.optional(),
   projects: z.array(projectSchema).optional(),
+  engagementExpenses: z.array(projectCostSchema).optional(),
   liegeRate: rate.optional(), titheRate: rate.optional(), xpMode: xpMode.optional(),
   turns: z.array(receipt), replay: z.array(z.object({ month: monthSchema, inputs, xpAward: award.optional() })),
 })
@@ -147,7 +148,7 @@ function calculateTerritory(item: TerritoryTurn) {
 }
 
 function holdingEffects(holding: Holding) {
-  return [...(holding.confidence?.effects ?? []), ...(holding.projects ?? []).flatMap(project => project.costs)]
+  return [...(holding.engagementExpenses ?? []), ...(holding.confidence?.effects ?? []), ...(holding.projects ?? []).flatMap(project => project.costs)]
 }
 
 export function availableEffects(holding: Holding, month: TurnMonth) {
