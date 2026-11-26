@@ -1,3 +1,4 @@
+import { militaryChargeState, militaryInputsSchema, militarySchema, validMilitary, validateMilitaryTurn } from './military'
 import { confirmedCompletion, constructionOutcome, forecast, projectSchema, validProjects } from './construction'
 import { z } from 'zod'
 import { dateIndex, dateParts, movePeriod, type Calendar } from './calendar'
@@ -39,6 +40,7 @@ const review = z.object({ liege: estimation.optional(), tithe: estimation.option
 const inputs = z.object({
   families: money, tax: money, services: money, resources: z.array(resource),
   effectIds: z.array(label).optional(),
+  military: militaryInputsSchema.optional(),
   payments: z.object({ liege: payment.optional(), tithe: payment.optional() }).optional(), xp: xpDecision.optional(),
   override: money.optional(), realized: money, adjustments: z.array(line), notes: z.string(), territories: z.array(territoryTurn).min(1).refine(uniqueTerritories).optional(),
 })
@@ -49,6 +51,7 @@ export const holdingSchema = z.object({
   families: money, tax: money, services: money, resources: z.array(resource),
   territories: z.array(territory).min(1).refine(uniqueTerritories).optional(),
   confidence: confidenceSchema.optional(),
+  military: militarySchema.optional(),
   projects: z.array(projectSchema).optional(),
   liegeRate: rate.optional(), titheRate: rate.optional(), xpMode: xpMode.optional(),
   turns: z.array(receipt), replay: z.array(z.object({ month: monthSchema, inputs, xpAward: award.optional() })),
@@ -234,6 +237,9 @@ export function previewTurn(holding: Holding, month: TurnMonth, values: TurnInpu
   lines.push(...draft.adjustments, ...effects.map(effect => ({
     name: effect.title, balance: effect.balance, amount: effect.amount, effectId: effect.id,
   })))
+  for (const item of draft.military?.decisions ?? []) {
+    if (item.action === 'pay' && item.amount) lines.push({ name: item.charge.title, balance: item.charge.balance, amount: -item.amount })
+  }
   for (const kind of ['liege', 'tithe'] as const) {
     const payment = draft.payments?.[kind]
     if (!payment?.approved) continue
@@ -257,7 +263,8 @@ export function previewTurn(holding: Holding, month: TurnMonth, values: TurnInpu
 
 export function recordTurn(cal: Calendar, clock: number, holding: Holding, month: TurnMonth, draft: TurnInputs): Holding {
   if (!sameMonth(dueMonth(cal, holding), month) || closingDay(cal, month) > clock) throw new Error('This turn is no longer due. Refresh the preview.')
-  const result = previewTurn(holding, month, draft)
+  const military = validateMilitaryTurn(cal, holding, month, draft.military)
+  const result = previewTurn(holding, month, military ? { ...draft, military } : draft)
   const territories = result.territories ? territoriesFor(holding).map(item => ({
     ...item, families: result.territories?.find(closing => closing.id === item.id)?.closing ?? item.families,
   })) : holding.territories
@@ -285,6 +292,8 @@ export function validHoldings(cal: Calendar, holdings: Holding[]) {
   try {
     return holdings.every(holding => {
       let last = closingDay(cal, holding.first) - 1
+      if (holding.military && !validMilitary(holding.military)) return false
+      militaryChargeState(holding.turns)
       if (holding.confidence) {
         const state = holding.confidence
         if (new Set(state.reviews.map(item => item.year)).size !== state.reviews.length) return false

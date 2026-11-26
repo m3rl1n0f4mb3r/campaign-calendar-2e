@@ -6,6 +6,9 @@ import type { GuideTopic } from './UserGuide'
 import { ConstructionPanel } from './ConstructionPanel'
 import type { Project } from './construction'
 import { ConfidencePanel } from './ConfidencePanel'
+import { MilitaryPanel } from './MilitaryPanel'
+import { MilitaryDecisionSummary, MilitaryExpenses } from './MilitaryExpenses'
+import { emptyMilitary, militaryConflicts, militaryReceiptChanged, validateMilitaryTurn, type Military } from './military'
 import type { Campaign } from './storage'
 
 export type ReceiptLink = { holdingId: string; month: TurnMonth }
@@ -14,6 +17,7 @@ type Props = {
   revision: string | null
   receipt?: ReceiptLink
   dominionEvent?: { holdingId: string; id: string }
+  militaryEntry?: { holdingId: string; unitId: string; day: number }
   constructionProject?: { holdingId: string; projectId: string }
   save: (holdings: Holding[]) => Promise<boolean>
   help: (topic: GuideTopic) => void
@@ -21,6 +25,7 @@ type Props = {
 }
 type Screen =
   | { type: 'construction'; id: string; projects: Project[]; selectedProject?: string; revision: Props['revision'] }
+  | { type: 'military'; id: string; draft: Military; selectedUnit?: string; day?: number; revision: Props['revision'] }
   | { type: 'confidence'; id: string; selectedEvent?: string }
   | { type: 'holding'; draft: Holding; revision: Props['revision'] }
   | { type: 'preview'; id: string; month: TurnMonth; draft: TurnInputs; revision: Props['revision']; projects?: Project[]; reset?: boolean }
@@ -177,10 +182,12 @@ function Ledger({ turn }: { turn: Receipt }) {
   </table></div>
 }
 
-export function DomainPanel({ campaign, revision, receipt, dominionEvent, constructionProject, save, backup, help }: Props) {
+export function DomainPanel({ campaign, revision, receipt, dominionEvent, constructionProject, militaryEntry, save, backup, help }: Props) {
   const [screen, setScreen] = useState<Screen | undefined>(receipt ? { type: 'receipt', link: receipt } : dominionEvent ? { type: 'confidence', id: dominionEvent.holdingId, selectedEvent: dominionEvent.id }
     : constructionProject ? { type: 'construction', id: constructionProject.holdingId, selectedProject: constructionProject.projectId,
       projects: campaign.holdings?.find(item => item.id === constructionProject.holdingId)?.projects ?? [], revision }
+    : militaryEntry ? { type: 'military', id: militaryEntry.holdingId, selectedUnit: militaryEntry.unitId, day: militaryEntry.day, revision,
+      draft: campaign.holdings?.find(item => item.id === militaryEntry.holdingId)?.military ?? emptyMilitary() }
     : undefined)
   const [pending, setPending] = useState(false)
   const [error, setError] = useState('')
@@ -200,13 +207,31 @@ export function DomainPanel({ campaign, revision, receipt, dominionEvent, constr
   }
   const startPreview = (holding: Holding) => {
     const month = dueMonth(calendar, holding)
-    go({ type: 'preview', id: holding.id, month, draft: replayInputs(holding, month), revision })
+    const draft = replayInputs(holding, month)
+    if (draft.military) {
+      const conflicts = new Set(militaryConflicts(calendar, holding, month).map(item => item.charge.id))
+      draft.military = { decisions: draft.military.decisions.filter(item => !conflicts.has(item.charge.id)) }
+    }
+    go({ type: 'preview', id: holding.id, month, draft, revision })
   }
   const startHolding = (holding?: Holding) => go({ type: 'holding', revision, draft: holding ?? {
     id: crypto.randomUUID(), name: '', ruler: '', liege: '', first: monthAt(calendar, current),
     opening: { cash: 0, noncash: 0 }, families: 0, tax: 100, services: 1000, resources: [], territories: [{ id: crypto.randomUUID(), name: 'Core territory', settlement: 'wilderness', families: 0, resources: [] }], turns: [], replay: [],
   } })
   const back = <button type="button" onClick={() => go()}>Back to holdings</button>
+
+  if (screen?.type === 'military') {
+    const holding = holdings.find(item => item.id === screen.id)
+    if (!holding) return <div className="form"><p>This holding is no longer available.</p>{back}</div>
+    const changed = JSON.stringify(holding.military ?? emptyMilitary()) !== JSON.stringify(screen.draft)
+    return <div className="form">
+      {stale ? <p className="warning" role="alert">Campaign data changed. Return to holdings and reopen the roster.</p>
+        : <MilitaryPanel calendar={calendar} clock={current} holding={holding} military={screen.draft} initialDay={screen.day}
+          selectedUnit={screen.selectedUnit} change={draft => setScreen({ ...screen, draft })} help={() => help('military-expenses')}/>}
+      <div className="actions">{back}<button className="primary" disabled={!changed || pending || stale}
+        onClick={() => void persist({ ...holding, military: screen.draft })}>Save roster and expenses</button></div>
+    </div>
+  }
 
   if (screen?.type === 'construction') {
     const holding = holdings.find(item => item.id === screen.id)
@@ -323,7 +348,10 @@ export function DomainPanel({ campaign, revision, receipt, dominionEvent, constr
     let result: Receipt | undefined
     let invalid = ''
     if (!stale) {
-      try { result = previewTurn(holding, month, draft) }
+      try {
+        const military = validateMilitaryTurn(calendar, holding, month, draft.military)
+        result = previewTurn(holding, month, { ...draft, military })
+      }
       catch (cause) { invalid = cause instanceof Error && cause.name !== 'ZodError' ? cause.message : 'Complete all required ledger fields with valid amounts.' }
     }
     const addLine = (name: string, balance: LedgerLine['balance']) =>
@@ -377,6 +405,8 @@ export function DomainPanel({ campaign, revision, receipt, dominionEvent, constr
           })}
           <div className="button-group"><button type="button" onClick={() => addLine('', 'cash')}>Add ledger entry</button><button type="button" onClick={() => addLine('Noncash expiration', 'noncash')}>Add expiration</button></div>
         </fieldset>
+        <MilitaryExpenses calendar={calendar} holding={holding} month={month} value={draft.military}
+          original={holding.replay.find(item => sameMonth(item.month, month))?.inputs.military} change={military => change({ military })}/>
         {!!holding.projects?.length && <ConstructionPanel calendar={calendar} clock={current} holding={holding}
           projects={holding.projects} month={month} backup={backup} help={() => help('track-construction')}
           change={projects => {
@@ -446,7 +476,11 @@ export function DomainPanel({ campaign, revision, receipt, dominionEvent, constr
           {input?.roll && ` · d10 ${input.roll.die} (${input.roll.sign > 0 ? 'gain' : 'loss'})`}
         </li>
       })}</ul>}
+      {militaryReceiptChanged(calendar, holding, turn) && <p className="warning">Roster or pay terms changed for this turn. Review its military charges before reopening.</p>}
       <Ledger turn={turn}/>
+      {!!turn.inputs.military?.decisions.length && <details><summary>Military decisions</summary>
+        <ul>{turn.inputs.military.decisions.map(item => <li key={item.charge.id}><MilitaryDecisionSummary calendar={calendar} decision={item}/></li>)}</ul>
+      </details>}
       {(['liege', 'tithe'] as const).map(kind => {
         const estimate = turn.review?.[kind]
         const payment = turn.inputs.payments?.[kind]
@@ -479,12 +513,13 @@ export function DomainPanel({ campaign, revision, receipt, dominionEvent, constr
         <div className="button-group">
           <button onClick={() => startHolding(holding)}>Edit holding</button>
           <button onClick={() => go({ type: 'construction', id: holding.id, projects: holding.projects ?? [], revision })}>Construction projects</button>
+          <button onClick={() => go({ type: 'military', id: holding.id, draft: holding.military ?? emptyMilitary(), revision })}>Garrison roster</button>
           <button onClick={() => go({ type: 'confidence', id: holding.id })}>Confidence and events</button>
           <button disabled={closingDay(calendar, next) > current} onClick={() => startPreview(holding)}>Preview turn</button>
         </div>
         {holding.turns.length > 0 && <details><summary>Turn history</summary>
           {[...xpTotals].map(([ruler, total]) => <p key={ruler}>{ruler} · {total.toLocaleString()} XP recorded for this holding</p>)}
-          <ul>{[...holding.turns].reverse().map(turn => <li key={date(turn.month)}><button onClick={() => go({ type: 'receipt', link: { holdingId: holding.id, month: turn.month } })}>{date(turn.month)}</button>{turn.xpAward && ` · ${turn.xpAward.amount.toLocaleString()} XP for ${turn.xpAward.recipient}`}</li>)}</ul>
+          <ul>{[...holding.turns].reverse().map(turn => <li key={date(turn.month)}><button onClick={() => go({ type: 'receipt', link: { holdingId: holding.id, month: turn.month } })}>{date(turn.month)}</button>{militaryReceiptChanged(calendar, holding, turn) && ' · Military charges need review'}{turn.xpAward && ` · ${turn.xpAward.amount.toLocaleString()} XP for ${turn.xpAward.recipient}`}</li>)}</ul>
         </details>}
       </section>
     })}

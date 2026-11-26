@@ -3,7 +3,7 @@ import { dayOf, hasOccurrence, minutes, occurrences, type EventData } from './ev
 import type { Campaign } from './storage'
 import { forecast, validProjects } from './construction'
 import { yearStart } from './confidence'
-import { closingDay, dueMonth, validHoldings, type TurnMonth } from './domain'
+import { closingDay, dueMonth, validHoldings, type TurnInputs, type TurnMonth } from './domain'
 
 export function migrate(campaign: Campaign, next: Calendar) {
   const old = campaign.calendar
@@ -115,7 +115,29 @@ export function migrate(campaign: Campaign, next: Calendar) {
       } catch { errors.push(`${project.name} has a construction record in a removed period.`) }
       return moved
     })
-    const projectHolding = projects ? { ...holding, projects } : holding
+    const military = holding.military && {
+      units: holding.military.units.map(unit => ({ ...unit,
+        changes: [...unit.changes].sort((a, b) => a.day - b.day).map(change =>
+          ({ ...change, day: day(change.day, `${unit.name} roster date`) })),
+      })),
+      supplies: holding.military.supplies.map(supply => ({ ...supply,
+        day: day(supply.day, `${supply.title} supply date`), target: day(supply.target, `${supply.title} first eligible turn`),
+      })),
+    }
+    function moveMilitaryInputs<T extends { inputs: TurnInputs }>(record: T): T {
+      if (!record.inputs.military) return record
+      const decisions = record.inputs.military.decisions.map(item => {
+        const { charge } = item
+        return { ...item, charge: { ...charge, from: day(charge.from, `${charge.title} service start`), through: day(charge.through, `${charge.title} service end`),
+          basis: charge.basis.map(rate => ({ ...rate, day: day(rate.day, `${charge.title} pay basis`) })),
+        } }
+      })
+      return { ...record, inputs: { ...record.inputs, military: { ...record.inputs.military, decisions } } }
+    }
+    const projectHolding = { ...holding, ...(projects && { projects }), ...(military && { military,
+      turns: holding.turns.map(moveMilitaryInputs), replay: holding.replay.map(moveMilitaryInputs),
+    }) }
+    if (military && !validHoldings(next, [projectHolding])) errors.push(`${holding.name} would have invalid military or domain history after migration.`)
     const state = holding.confidence
     if (!state) return projectHolding
     const annualDate = (value: number, year: number, label: string) => {
