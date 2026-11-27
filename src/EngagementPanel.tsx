@@ -69,29 +69,36 @@ export default function EngagementPanel({ campaign, revision, selected, initialI
       event.preventDefault()
       void commit(() => saveEngagement(campaign, { ...draft, consequences: item?.consequences ?? [] }), () => { setId(draft.id); setDraft(undefined) })
     }}>
-      <label>Engagement name<input required maxLength={120} value={draft.title} onChange={e => setDraft({ ...draft, title: e.target.value })}/></label>
-      <label>Type<select value={draft.kind} onChange={e => setDraft({ ...draft, kind: e.target.value as Engagement['kind'], end: undefined })}>
-        <option value="battle">Battle</option><option value="siege">Siege</option>
-      </select></label>
-      <DateField calendar={calendar} label={draft.kind === 'battle' ? 'Battle date' : 'Siege start'} value={draft.start} onChange={start => setDraft({ ...draft, start })}/>
-      {draft.kind === 'siege' && <>
-        <label className="check"><input type="checkbox" checked={draft.end !== undefined} onChange={e => setDraft({ ...draft, end: e.target.checked ? Math.max(current, draft.start) : undefined })}/> Set siege end date</label>
-        {draft.end !== undefined && <DateField calendar={calendar} label="Siege end" value={draft.end} onChange={end => setDraft({ ...draft, end })}/>}
-      </>}
-      <label>Location<input maxLength={120} value={draft.location} onChange={e => setDraft({ ...draft, location: e.target.value })}/></label>
-      <HoldingField holdings={holdings} value={draft.holdingId} change={holdingId => setDraft({ ...draft, holdingId, projectId: undefined })}/>
-      {draft.holdingId && <label>Location project<select value={draft.projectId ?? ''} onChange={e => setDraft({ ...draft, projectId: e.target.value || undefined })}>
-        <option value="">No project link</option>{holdings.find(holding => holding.id === draft.holdingId)?.projects?.map(project =>
-          <option key={project.id} value={project.id}>{project.name}</option>)}
-      </select></label>}
-      <fieldset className="form"><legend>Participants</legend>
+      <section className="form workflow-section">
+        <h4>Engagement details</h4>
+        <label>Engagement name<input required maxLength={120} value={draft.title} onChange={e => setDraft({ ...draft, title: e.target.value })}/></label>
+        <label>Type<select value={draft.kind} onChange={e => setDraft({ ...draft, kind: e.target.value as Engagement['kind'], end: undefined })}>
+          <option value="battle">Battle</option><option value="siege">Siege</option>
+        </select></label>
+        <DateField calendar={calendar} label={draft.kind === 'battle' ? 'Battle date' : 'Siege start'} value={draft.start} onChange={start => setDraft({ ...draft, start })}/>
+        {draft.kind === 'siege' && <>
+          <label className="check"><input type="checkbox" checked={draft.end !== undefined} onChange={e => setDraft({ ...draft, end: e.target.checked ? Math.max(current, draft.start) : undefined })}/> Set siege end date</label>
+          {draft.end !== undefined && <DateField calendar={calendar} label="Siege end" value={draft.end} onChange={end => setDraft({ ...draft, end })}/>}
+        </>}
+        <label>Location<input maxLength={120} value={draft.location} onChange={e => setDraft({ ...draft, location: e.target.value })}/></label>
+        <HoldingField holdings={holdings} value={draft.holdingId} change={holdingId => setDraft({ ...draft, holdingId, projectId: undefined })}/>
+        {draft.holdingId && <label>Location project<select value={draft.projectId ?? ''} onChange={e => setDraft({ ...draft, projectId: e.target.value || undefined })}>
+          <option value="">No project link</option>{holdings.find(holding => holding.id === draft.holdingId)?.projects?.map(project =>
+            <option key={project.id} value={project.id}>{project.name}</option>)}
+        </select></label>}
+      </section>
+      <section className="form workflow-section">
+        <h4>Participants</h4>
         {draft.participants.map(part => <ParticipantFields key={part.id} part={part} holdings={holdings} day={draft.start}
           change={value => setDraft({ ...draft, participants: draft.participants.map(person => person.id === part.id ? value : person) })}
           remove={() => setDraft({ ...draft, participants: draft.participants.filter(person => person.id !== part.id) })}/>)}
         <button type="button" onClick={() => setDraft({ ...draft, participants: [...draft.participants, { id: crypto.randomUUID(), name: '', side: '', role: 'unassigned' }] })}>Add participant</button>
-      </fieldset>
-      <label>Outcome<textarea value={draft.outcome} onChange={e => setDraft({ ...draft, outcome: e.target.value })}/></label>
-      <label>Notes<textarea value={draft.notes} onChange={e => setDraft({ ...draft, notes: e.target.value })}/></label>
+      </section>
+      <section className="form workflow-section">
+        <h4>Outcome and notes</h4>
+        <label>Outcome<textarea value={draft.outcome} onChange={e => setDraft({ ...draft, outcome: e.target.value })}/></label>
+        <label>Notes<textarea value={draft.notes} onChange={e => setDraft({ ...draft, notes: e.target.value })}/></label>
+      </section>
       <div className="actions"><button type="button" onClick={() => leave(() => setDraft(undefined))}>Cancel</button><button className="primary" disabled={busy}>Save engagement</button></div>
     </form> : item ? <>
       <h3>{item.title}{item.archived && ' · Archived'}</h3>
@@ -202,7 +209,7 @@ function ParticipantFields({ part, holdings, day, change, remove }: {
   change: (value: EngagementParticipant) => void; remove: () => void
 }) {
   const holding = holdings.find(item => item.id === part.holdingId)
-  return <fieldset className="form"><legend>{part.name || 'Participant'}</legend>
+  return <fieldset className="form engagement-participant"><legend>{part.name || 'Participant'}</legend>
     <div className="form-row">
       <label>Role<select value={participantRole(part)} onChange={e => change({ ...part, role: e.target.value as EngagementParticipant['role'] })}>
         <option value="unassigned">Unassigned</option><option value="attacker">Attacker</option><option value="defender">Defender</option>

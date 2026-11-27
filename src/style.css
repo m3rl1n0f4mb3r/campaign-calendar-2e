@@ -192,6 +192,8 @@ dialog:has(.migration-grid) { width: min(900px, 94vw); }
   padding: clamp(.65rem, 2vw, 1.1rem);
   margin-block: .2rem;
 }
+.engagement-participant { background: var(--paper); padding: .75rem; }
+.engagement-participant > legend { font-weight: 650; padding-inline: .3rem; }
 .workflow-section > h4 { margin: 0; font-size: 1.05rem; }
 .domain-dialog .workflow-section fieldset { border-color: #cad3c6; }
 .workflow-status { display: inline-block; padding: .1rem .45rem; border-radius: .35rem; background: #e2ebdf; color: #274833; font-size: .85rem; }
