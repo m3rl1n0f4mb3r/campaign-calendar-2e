@@ -51,7 +51,7 @@ export function Modal({ title, dismiss, children, className, focusOnOpen, fallba
       outside.current = false
     }}>
     <header className="dialog-header"><h2 id={heading}>{title}</h2><button type="button" aria-label="Close dialog" onClick={dismiss}>×</button></header>
-    {children}
+    <div className="dialog-body">{children}</div>
   </dialog>
 }
 
