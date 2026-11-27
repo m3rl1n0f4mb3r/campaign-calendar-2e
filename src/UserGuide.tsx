@@ -138,7 +138,7 @@ export function UserGuide({ topic, onClose }: { topic: GuideTopic; onClose: () =
     <section aria-labelledby="battle-siege-records" hidden={article !== 'battle-siege-records'}>
       <h3 id="battle-siege-records" tabIndex={-1}>{topics['battle-siege-records']}</h3>
       <ol>
-        <li>Open <strong>Domain → Battles and sieges</strong>. Enter the dates, participants, and outcome from play at the table. A siege without an end date appears in <strong>Active sieges</strong> while browsing dates on or after its start.</li>
+        <li>Open <strong>Domain → Battles and sieges</strong>. Enter the dates, participants, and outcome from play at the table. Assign each participant the Attacker or Defender role to prefill the right side in Quick resolution. A siege without an end date appears in <strong>Active sieges</strong> while browsing dates on or after its start.</li>
         <li>Save the engagement, then propose consequences individually. Review the dated unit strength before approving a roster change. Link a repair project and any existing cost, or propose a separate one-off expense.</li>
         <li>Approve an expense in its target turn. For confidence, open the proposed review and decide whether to record a check. Use the linked roster, project, or receipt to correct applied consequences.</li>
         <li>Use <strong>Archive engagement</strong> to hide it from the calendar, search, and print while preserving linked history. Find it again with <strong>Show archived engagements</strong>. Delete a mistaken engagement only when it has no approved result or applied consequence.</li>

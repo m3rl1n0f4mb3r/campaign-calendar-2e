@@ -4,7 +4,7 @@ import { dateLabel } from './calendar'
 import { DateField } from './DateField'
 import { closingDay, formatGp, type TurnMonth } from './domain'
 import {
-  applyConsequence, correctEngagementExpense, deleteEngagement, engagementDeleteBlocker, expenseTarget, involvesHolding, replaceConsequence, rosterStrength, saveEngagement,
+  applyConsequence, correctEngagementExpense, deleteEngagement, engagementDeleteBlocker, expenseTarget, involvesHolding, participantRole, participantRoles, replaceConsequence, rosterStrength, saveEngagement,
   type Consequence, type Engagement, type EngagementParticipant,
 } from './engagement'
 import type { Campaign } from './storage'
@@ -88,7 +88,7 @@ export default function EngagementPanel({ campaign, revision, selected, initialI
         {draft.participants.map(part => <ParticipantFields key={part.id} part={part} holdings={holdings} day={draft.start}
           change={value => setDraft({ ...draft, participants: draft.participants.map(person => person.id === part.id ? value : person) })}
           remove={() => setDraft({ ...draft, participants: draft.participants.filter(person => person.id !== part.id) })}/>)}
-        <button type="button" onClick={() => setDraft({ ...draft, participants: [...draft.participants, { id: crypto.randomUUID(), name: '', side: '' }] })}>Add participant</button>
+        <button type="button" onClick={() => setDraft({ ...draft, participants: [...draft.participants, { id: crypto.randomUUID(), name: '', side: '', role: 'unassigned' }] })}>Add participant</button>
       </fieldset>
       <label>Outcome<textarea value={draft.outcome} onChange={e => setDraft({ ...draft, outcome: e.target.value })}/></label>
       <label>Notes<textarea value={draft.notes} onChange={e => setDraft({ ...draft, notes: e.target.value })}/></label>
@@ -101,7 +101,7 @@ export default function EngagementPanel({ campaign, revision, selected, initialI
         {item.projectId && ` · ${holdings.find(holding => holding.id === item.holdingId)?.projects?.find(project => project.id === item.projectId)?.name ?? 'Project unavailable'}`}</p>}
       {item.outcome && <p className="domain-notes">{item.outcome}</p>}
       {item.notes && <p className="domain-notes">{item.notes}</p>}
-      {!!item.participants.length && <ul>{item.participants.map(person => <li key={person.id}>{person.side} · {person.name}
+      {!!item.participants.length && <ul>{item.participants.map(person => <li key={person.id}>{person.name} · {participantRoles[participantRole(person)]}{person.side && ` · ${person.side}`}
         {person.before !== undefined && ` · Before ${person.before}`}{person.after !== undefined && ` · After ${person.after}`}</li>)}</ul>}
       <button type="button" onClick={() => setQuick(true)}>Quick resolution</button>
       <button type="button" onClick={() => { setEditRevision(revision); setDraft(item); setProposal(undefined) }}>Edit engagement</button>
@@ -204,9 +204,12 @@ function ParticipantFields({ part, holdings, day, change, remove }: {
   const holding = holdings.find(item => item.id === part.holdingId)
   return <fieldset className="form"><legend>{part.name || 'Participant'}</legend>
     <div className="form-row">
-      <label>Side<input required maxLength={120} value={part.side} onChange={e => change({ ...part, side: e.target.value })}/></label>
+      <label>Role<select value={participantRole(part)} onChange={e => change({ ...part, role: e.target.value as EngagementParticipant['role'] })}>
+        <option value="unassigned">Unassigned</option><option value="attacker">Attacker</option><option value="defender">Defender</option>
+      </select></label>
       <label>Participant name<input required maxLength={120} value={part.name} onChange={e => change({ ...part, name: e.target.value })}/></label>
     </div>
+    <label>Side name (optional)<input maxLength={120} value={part.side} onChange={e => change({ ...part, side: e.target.value })}/></label>
     <HoldingField holdings={holdings} value={part.holdingId} change={holdingId => change({ ...part, holdingId, unitId: undefined })}/>
     {holding && <label>Roster unit<select value={part.unitId ?? ''} onChange={e => {
       const unit = holding.military?.units.find(item => item.id === e.target.value)

@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { dateIndex } from './calendar'
+import { saveEngagement, type Engagement } from './engagement'
 import { migrate } from './migration'
 import { greyhawk } from './presets'
 import {
-  approveResolution, defaultForce, nextResolutionAction, resolveStep, resolutionModifiers, resolutionState, resolutionSummary,
+  approveResolution, defaultForce, initialForceName, nextResolutionAction, resolveStep, resolutionModifiers, resolutionState, resolutionSummary,
   storeResolution, type Resolution,
 } from './quickResolution'
 import { exportCampaign, newCampaign, parseCampaignBackup } from './storage'
@@ -16,6 +17,20 @@ function draft(kind: Resolution['kind'], start = 0): Resolution {
 }
 
 describe('Castle Guide quick resolution', () => {
+  it('prefills forces by participant role regardless of entry order and preserves legacy role labels', () => {
+    const siege: Engagement = { id: 'siege', title: 'Riverwatch', kind: 'siege', start: 0, location: '', outcome: '', notes: '', consequences: [],
+      participants: [
+        { id: 'defense', name: 'River Guard', side: 'Defender' },
+        { id: 'offense', name: 'Free Company', side: '', role: 'attacker' },
+        { id: 'neutral', name: 'Scout', side: 'Attacker', role: 'unassigned' },
+      ] }
+    const campaign = parseCampaignBackup(exportCampaign(saveEngagement(newCampaign('Riverwatch'), siege)))
+    const restored = campaign.engagements![0]
+    expect(initialForceName('siege', 'a', restored)).toBe('Free Company')
+    expect(initialForceName('siege', 'b', restored)).toBe('River Guard')
+    expect(initialForceName('battle', 'b', { ...siege, participants: [] })).toBe('Force B')
+  })
+
   it('checks withdrawal at exactly 40%, then applies pursuit after a failed rally', () => {
     const first = resolveStep(draft('battle'), { kind: 'round', roll: 40 })
     expect(first.steps[0]).toMatchObject({ roll: 40, adjusted: 20, before: { a: { points: 25 }, b: { points: 50 } },

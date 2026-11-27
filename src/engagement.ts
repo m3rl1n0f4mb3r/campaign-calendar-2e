@@ -8,8 +8,9 @@ const id = z.string().min(1).max(120)
 const name = z.string().trim().min(1).max(120)
 const date = z.number().int().min(-10_000_000_000).max(10_000_000_000)
 const count = z.number().int().safe().nonnegative()
+export const participantRoles = { attacker: 'Attacker', defender: 'Defender', unassigned: 'Unassigned' } as const
 const participant = z.object({
-  id, name, side: name, before: count.optional(), after: count.optional(), holdingId: id.optional(), unitId: id.optional(),
+  id, name, side: z.string().trim().max(120), role: z.enum(['attacker', 'defender', 'unassigned']).optional(), before: count.optional(), after: count.optional(), holdingId: id.optional(), unitId: id.optional(),
 }).refine(item => !item.unitId || !!item.holdingId)
 const base = z.object({ id, holdingId: id, day: date, status: z.enum(['proposed', 'applied', 'declined']) })
 const consequence = z.discriminatedUnion('kind', [
@@ -31,6 +32,14 @@ export type Engagement = z.infer<typeof engagementSchema>
 export type EngagementParticipant = z.infer<typeof participant>
 export type Consequence = z.infer<typeof consequence>
 
+export function participantRole(participant: EngagementParticipant): keyof typeof participantRoles {
+  if (participant.role) return participant.role
+  const side = participant.side.trim().toLowerCase()
+  if (['attacker', 'attackers', 'force a', 'a'].includes(side)) return 'attacker'
+  if (['defender', 'defenders', 'force b', 'b'].includes(side)) return 'defender'
+  return 'unassigned'
+}
+
 export function activeSieges(items: readonly Engagement[], day: number) {
   return items.filter(item => !item.archived && item.kind === 'siege' && item.start <= day && (item.end === undefined || day <= item.end))
 }
@@ -45,7 +54,7 @@ export function engagementEntries(items: readonly Engagement[], from: number, to
   return items.flatMap(item => {
     if (item.archived) return []
     if (term && ![item.title, item.location, item.outcome, item.notes, item.kind,
-      ...item.participants.flatMap(person => [person.name, person.side])].some(value => value.toLowerCase().includes(term))) return []
+      ...item.participants.flatMap(person => [person.name, person.side, participantRole(person)])].some(value => value.toLowerCase().includes(term))) return []
     const entries = [{ key: `${item.id}:start`, day: item.start, title: item.kind === 'battle' ? item.title : `Siege begins · ${item.title}` }]
     if (item.end !== undefined) entries.push({ key: `${item.id}:end`, day: item.end, title: `Siege ends · ${item.title}` })
     return entries.filter(entry => entry.day >= from && entry.day < to).map(entry => ({ ...entry, engagementId: item.id, location: item.location }))

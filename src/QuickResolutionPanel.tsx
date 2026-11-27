@@ -5,7 +5,7 @@ import { DateField } from './DateField'
 import { rollDie } from './confidence'
 import type { Engagement } from './engagement'
 import {
-  approveResolution, defaultForce, nextResolutionAction, resolutionModifiers, resolutionState, resolutionSummary,
+  approveResolution, defaultForce, initialForceName, nextResolutionAction, resolutionModifiers, resolutionState, resolutionSummary,
   resolveStep, storeResolution, type Conditions, type Force, type Resolution,
 } from './quickResolution'
 import type { Campaign } from './storage'
@@ -72,9 +72,8 @@ function Setup({ campaign, selected, engagement, busy, save }: {
   const [kind, setKind] = useState<Resolution['kind']>(engagement?.kind ?? 'battle')
   const [title, setTitle] = useState(engagement?.title ?? '')
   const [start, setStart] = useState(engagement?.start ?? selected)
-  const labels = [...new Set(engagement?.participants.map(person => person.side))]
-  const [a, setA] = useState(defaultForce(labels[0] ?? (kind === 'siege' ? 'Attackers' : 'Force A')))
-  const [b, setB] = useState(defaultForce(labels[1] ?? (kind === 'siege' ? 'Defenders' : 'Force B')))
+  const [a, setA] = useState(() => defaultForce(initialForceName(kind, 'a', engagement)))
+  const [b, setB] = useState(() => defaultForce(initialForceName(kind, 'b', engagement)))
   useChangedDraft([kind, title, start, a, b])
   return <form className="form" onSubmit={e => {
     e.preventDefault()
