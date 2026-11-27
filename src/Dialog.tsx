@@ -1,7 +1,9 @@
 import { createContext, useContext, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 
+type Confirmation = { title: string; message: string; label: string; cancelLabel?: string; danger?: boolean }
+type Confirm = (options: Confirmation, action: () => void) => void
 type Leave = (action: () => void) => void
-const DraftContext = createContext<{ report: (id: string, dirty: boolean) => () => void; leave: Leave } | undefined>(undefined)
+const DraftContext = createContext<{ report: (id: string, dirty: boolean) => () => void; leave: Leave; confirm: Confirm } | undefined>(undefined)
 
 export function useDialogDraft(dirty: boolean) {
   const context = useContext(DraftContext)
@@ -11,6 +13,19 @@ export function useDialogDraft(dirty: boolean) {
 
 export function useDialogLeave(): Leave {
   return useContext(DraftContext)?.leave ?? (action => action())
+}
+
+export function useConfirmAction(): Confirm {
+  const context = useContext(DraftContext)
+  if (!context) throw new Error('Confirmation actions require a dialog.')
+  return context.confirm
+}
+
+export function ConfirmButton({ options, action, children, className }: {
+  options: Confirmation; action: () => void; children: ReactNode; className?: string
+}) {
+  const confirm = useConfirmAction()
+  return <button type="button" className={className} onClick={() => confirm(options, action)}>{children}</button>
 }
 
 export function useChangedDraft(data: unknown, baseline?: unknown) {
@@ -63,19 +78,26 @@ export function Dialog({ title, close, dirty = false, saving = false, className,
     if (dirty) drafts.current.add(id)
     return () => { drafts.current.delete(id) }
   })
-  const [discard, setDiscard] = useState<() => void>()
+  const [confirmation, setConfirmation] = useState<(Confirmation & { action: () => void })>()
+  const confirm: Confirm = (options, action) => {
+    if (!saving) setConfirmation({ ...options, action })
+  }
   const leave: Leave = action => {
     if (saving) return
-    if (dirty || drafts.current.size) setDiscard(() => action)
+    if (dirty || drafts.current.size) confirm({
+      title: 'Discard changes?', message: 'You have unsaved changes.', label: 'Discard changes', cancelLabel: 'Keep editing', danger: true,
+    }, action)
     else action()
   }
-  return <DraftContext.Provider value={{ report, leave }}>
+  const cancel = () => setConfirmation(undefined)
+  return <DraftContext.Provider value={{ report, leave, confirm }}>
     <Modal title={title} className={className} fallbackFocus dismiss={() => leave(close)}>{children}</Modal>
-    {discard && <Modal title="Discard changes?" dismiss={() => setDiscard(undefined)} focusOnOpen="[data-keep-editing]">
-      <p>You have unsaved changes.</p>
+    {confirmation && <Modal key={confirmation.title} title={confirmation.title} dismiss={cancel} focusOnOpen="[data-cancel-confirmation]">
+      <p>{confirmation.message}</p>
       <div className="actions">
-        <button type="button" data-keep-editing onClick={() => setDiscard(undefined)}>Keep editing</button>
-        <button type="button" className="danger" onClick={() => { setDiscard(undefined); discard() }}>Discard changes</button>
+        <button type="button" data-cancel-confirmation onClick={cancel}>{confirmation.cancelLabel ?? 'Cancel'}</button>
+        <button type="button" className={confirmation.danger ? 'danger' : 'primary'}
+          onClick={() => { cancel(); confirmation.action() }}>{confirmation.label}</button>
       </div>
     </Modal>}
   </DraftContext.Provider>

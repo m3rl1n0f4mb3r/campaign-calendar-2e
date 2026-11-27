@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { dateLabel } from './calendar'
-import { useChangedDraft, useDialogLeave } from './Dialog'
+import { useConfirmAction, useChangedDraft, useDialogLeave } from './Dialog'
 import { DateField } from './DateField'
 import { rollDie } from './confidence'
 import type { Engagement } from './engagement'
@@ -33,6 +33,7 @@ export default function QuickResolutionPanel({ campaign, selected, engagement, s
     catch (cause) { setError(cause instanceof Error && cause.name !== 'ZodError' ? cause.message : 'Enter valid dates, force values, and rolls.') }
     finally { setBusy(false) }
   }
+  const confirm = useConfirmAction()
   const leave = useDialogLeave()
   const scoped = engagement ? all.filter(entry => entry.engagementId === engagement.id) : all
   return <div className="form">
@@ -49,9 +50,8 @@ export default function QuickResolutionPanel({ campaign, selected, engagement, s
         run={input => void persist(() => storeResolution(campaign, resolveStep(item, input)))}
         undo={() => void persist(() => storeResolution(campaign, { ...item, steps: item.steps.slice(0, -1) }))}
         discard={() => {
-          if (window.confirm(`Discard the draft “${item.title}” and its rolls?`)) {
-            void persist(() => ({ ...campaign, resolutions: all.filter(entry => entry.id !== item.id) }), () => setId(undefined))
-          }
+          confirm({ title: 'Discard resolution draft?', message: `Discard “${item.title}” and its rolls?`, label: 'Discard draft', danger: true },
+          () => void persist(() => ({ ...campaign, resolutions: all.filter(entry => entry.id !== item.id) }), () => setId(undefined)))
         }}
         approve={(outcome, reason, target, narrative) => void persist(() => approveResolution(campaign, item, outcome, reason, target, narrative))}
         openEngagement={openEngagement}/>

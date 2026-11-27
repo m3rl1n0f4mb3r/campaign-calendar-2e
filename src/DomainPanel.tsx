@@ -1,4 +1,4 @@
-import { useDialogDraft, useDialogLeave } from './Dialog'
+import { useConfirmAction, useDialogDraft, useDialogLeave } from './Dialog'
 import { useEffect, useState } from 'react'
 import { dateLabel, displayYear } from './calendar'
 import { closingDay, dueMonth, formatGp, monthAt, territoryPopulation, previewTurn, recordTurn, reopenTurn, resourceRates, sameMonth, territoriesFor, territoryDefaults, replayInputs, turnEstimates, paymentLabels, availableEffects,
@@ -201,6 +201,7 @@ export function DomainPanel({ campaign, revision, receipt, dominionEvent, constr
   const [error, setError] = useState('')
   const { calendar, current } = campaign
   const holdings = campaign.holdings ?? []
+  const confirm = useConfirmAction()
   const leave = useDialogLeave()
   const draftHolding = screen && 'id' in screen ? holdings.find(item => item.id === screen.id) : undefined
   const changed = screen?.type === 'military' ? JSON.stringify(screen.draft) !== JSON.stringify(draftHolding?.military ?? emptyMilitary())
@@ -372,9 +373,10 @@ export function DomainPanel({ campaign, revision, receipt, dominionEvent, constr
       </>}
       <div className="actions">
         {savedHolding && <button type="button" disabled={pending || stale} onClick={() => leave(() => {
-          if (savedHolding.archived || window.confirm(`Archive “${savedHolding.name}”? Turn posting will pause. Receipts and pending charges stay available.`)) {
-            void persist({ ...savedHolding, archived: !savedHolding.archived })
-          }
+          const update = () => void persist({ ...savedHolding, archived: !savedHolding.archived })
+          if (savedHolding.archived) update()
+          else confirm({ title: 'Archive holding?', message: `Archiving “${savedHolding.name}” pauses turn posting. Receipts and pending charges stay available.`,
+            label: 'Archive holding' }, update)
         })}>{savedHolding.archived ? 'Unarchive holding' : 'Archive holding'}</button>}
         {back}<button className="primary" disabled={pending || stale}>Save holding</button>
       </div>

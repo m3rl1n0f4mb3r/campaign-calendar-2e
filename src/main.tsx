@@ -18,7 +18,7 @@ import type { EngagementLink } from './EngagementPanel'
 import { militaryEntries } from './military'
 import { PrintCalendar } from './PrintCalendar'
 import type { PrintEntry } from './printing'
-import { Dialog } from './Dialog'
+import { ConfirmButton, Dialog } from './Dialog'
 import './style.css'
 
 const EngagementPanel = lazy(() => import('./EngagementPanel'))
@@ -434,9 +434,9 @@ function App() {
       {preset === 'dragonlance' && <p>Moon cycles come from <a href={lanceSource} target="_blank" rel="noreferrer">Tales of the Lance</a>. Replace the sample phase anchors with your campaign’s phases in Calendar settings.</p>}
       <div className="actions"><button className="primary">Create campaign</button></div></form>}
       {panel === 'data' && <div className="form"><button type="button" onClick={() => openGuide('backups')}>Help with backups</button><button disabled={locked} onClick={backup}>Back up {campaign.name}</button>
-        {locked && <button className="danger" onClick={async () => {
-          if (window.confirm('Replace unreadable browser data with a new campaign?') && await commit(store, true)) close()
-        }}>Start fresh</button>}
+        {locked && <ConfirmButton className="danger" options={{ title: 'Start fresh?',
+          message: 'This replaces the unreadable browser data with a new campaign.', label: 'Start fresh', danger: true }}
+          action={async () => { if (await commit(store, true)) close() }}>Start fresh</ConfirmButton>}
         <label>Restore campaign backup<input type="file" accept=".json,application/json" onChange={async e => {
           const file = e.target.files?.[0]
           const request = ++restoreRequest.current

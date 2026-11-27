@@ -1,4 +1,4 @@
-import { useChangedDraft, useDialogDraft } from './Dialog'
+import { useConfirmAction, useChangedDraft, useDialogDraft } from './Dialog'
 import { useState } from 'react'
 import { dateLabel, dateParts, type Calendar } from './calendar'
 import { EstimateHistory } from './EstimatePanel'
@@ -121,6 +121,7 @@ function ProjectWork({ calendar, clock, project, holding, month, update, backup,
   calendar: Calendar; clock: number; project: Project; holding: Holding; month?: TurnMonth
   update: (project: Project) => void; backup: () => void; openReceipt?: (month: TurnMonth) => void
 }) {
+  const confirm = useConfirmAction()
   const [error, setError] = useState('')
   const [reopen, setReopen] = useState<ProjectReview>()
   const [correct, setCorrect] = useState<number>()
@@ -290,7 +291,9 @@ function ProjectWork({ calendar, clock, project, holding, month, update, backup,
       })}</ul>}
     </fieldset>
     {!month && active && <button type="button" className="danger" onClick={() => {
-      if (window.confirm(`Cancel ${project.name}? Its history and any posted ledger receipts will remain.`)) post(() => ({ ...project, canceled: clock }))
+      confirm({ title: 'Cancel project?', message: `Cancel ${project.name}? Its history and posted ledger receipts stay available.`,
+        label: 'Cancel project', cancelLabel: 'Keep project', danger: true },
+      () => post(() => ({ ...project, canceled: clock })))
     }}>Cancel project</button>}
   </div>
 }

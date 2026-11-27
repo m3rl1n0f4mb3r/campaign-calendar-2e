@@ -1,5 +1,5 @@
 import { lazy, Suspense, useState } from 'react'
-import { useChangedDraft, useDialogDraft, useDialogLeave } from './Dialog'
+import { useConfirmAction, useChangedDraft, useDialogDraft, useDialogLeave } from './Dialog'
 import { dateLabel } from './calendar'
 import { DateField } from './DateField'
 import { closingDay, formatGp, type TurnMonth } from './domain'
@@ -39,6 +39,7 @@ export default function EngagementPanel({ campaign, revision, selected, initialI
   const follow = (link: EngagementLink) => {
     if (item) leave(() => openLink(link, item.id, initialHolding))
   }
+  const confirm = useConfirmAction()
   const leave = useDialogLeave()
   useDialogDraft(!!draft && (item ? JSON.stringify(draft) !== JSON.stringify(item) :
     !!(draft.title || draft.notes || draft.outcome || draft.location || draft.participants.length || draft.kind !== 'battle' || draft.start !== selected || draft.holdingId !== initialHolding)))
@@ -106,14 +107,15 @@ export default function EngagementPanel({ campaign, revision, selected, initialI
       <button type="button" onClick={() => { setEditRevision(revision); setDraft(item); setProposal(undefined) }}>Edit engagement</button>
       <div className="button-group">
         <button type="button" disabled={busy} onClick={() => leave(() => {
-          if (item.archived || window.confirm(`Archive “${item.title}”? It will be hidden from the calendar, search, print, and the active siege list. Linked records stay available.`)) {
-            void commit(() => saveEngagement(campaign, { ...item, archived: !item.archived }), () => { setProposal(undefined) })
-          }
+          const update = () => void commit(() => saveEngagement(campaign, { ...item, archived: !item.archived }), () => setProposal(undefined))
+          if (item.archived) update()
+          else confirm({ title: 'Archive engagement?', message: `“${item.title}” will be hidden from the calendar, search, print, and the active siege list. Linked records stay available.`,
+            label: 'Archive engagement' }, update)
         })}>{item.archived ? 'Unarchive engagement' : 'Archive engagement'}</button>
         {!blocker && <button type="button" className="danger" disabled={busy} onClick={() => leave(() => {
-          if (window.confirm(`Delete “${item.title}”? This removes its calendar entries and unapplied proposals.`)) {
-            void commit(() => deleteEngagement(campaign, item.id), () => { setId(undefined); setProposal(undefined) })
-          }
+          confirm({ title: 'Delete engagement?', message: `Deleting “${item.title}” removes its calendar entries and unapplied proposals.`,
+            label: 'Delete engagement', danger: true },
+          () => void commit(() => deleteEngagement(campaign, item.id), () => { setId(undefined); setProposal(undefined) }))
         })}>Delete engagement</button>}
       </div>
       {blocker && <p className="muted">{blocker}</p>}

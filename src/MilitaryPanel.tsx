@@ -1,4 +1,4 @@
-import { useChangedDraft, useDialogLeave } from './Dialog'
+import { useConfirmAction, useChangedDraft, useDialogLeave } from './Dialog'
 import { useState } from 'react'
 import { dateLabel, type Calendar } from './calendar'
 import { DateField } from './DateField'
@@ -18,6 +18,7 @@ export function MilitaryPanel({ calendar, clock, holding, military, initialDay, 
   const [edit, setEdit] = useState<'muster' | 'supply' | Unit | undefined>(() => correction ? military.units.find(unit => unit.id === selectedUnit) : undefined)
   const [details, setDetails] = useState<Unit>()
   const [editingSupply, setEditingSupply] = useState<Supply>()
+  const confirm = useConfirmAction()
   const leave = useDialogLeave()
   useChangedDraft(details, military.units.find(item => item.id === details?.id))
   const [error, setError] = useState('')
@@ -108,7 +109,9 @@ export function MilitaryPanel({ calendar, clock, holding, military, initialDay, 
           <div className="button-group">
             <button type="button" onClick={() => leave(() => { setDetails(undefined); setEditingSupply(supply); setEdit('supply') })}>Edit proposal</button>
             <button type="button" className="danger" onClick={() => {
-              if (window.confirm(`Withdraw “${supply.title}”?`)) apply({ ...military, supplies: military.supplies.filter(item => item.id !== supply.id) })
+              confirm({ title: 'Withdraw supply proposal?', message: `“${supply.title}” will be removed from future turn previews after you save the roster.`,
+                label: 'Withdraw proposal', danger: true },
+              () => apply({ ...military, supplies: military.supplies.filter(item => item.id !== supply.id) }))
             }}>Withdraw proposal</button>
           </div>}
       </li>

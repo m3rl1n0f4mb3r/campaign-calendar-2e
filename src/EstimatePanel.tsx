@@ -1,4 +1,4 @@
-import { useDialogDraft, useDialogLeave } from './Dialog'
+import { useConfirmAction, useDialogDraft, useDialogLeave } from './Dialog'
 import { useMemo, useRef, useState } from 'react'
 import { dateLabel, type Calendar } from './calendar'
 import { DateField } from './DateField'
@@ -89,6 +89,7 @@ export function EstimatePanel({ campaign, save, help }: Props) {
   const [reviewing, setReviewing] = useState(false)
 
   const catalog = useMemo(() => campaign.castleCatalog ?? defaultCatalog(), [campaign.castleCatalog])
+  const confirm = useConfirmAction()
   const leave = useDialogLeave()
   const savedDraft = (campaign.castleEstimates ?? []).find(item => item.id === draft?.id)
   useDialogDraft((!!draft && JSON.stringify(draft) !== (savedDraft ? JSON.stringify(savedDraft) : initialDraft)) ||
@@ -189,9 +190,9 @@ export function EstimatePanel({ campaign, save, help }: Props) {
     {campaign.castleEstimates?.map(item => <div className="button-group" key={item.id}>
       <button type="button" onClick={() => selectDraft(item)}>{item.name}</button>
       <button type="button" className="catalog-icon danger" aria-label={`Delete estimate draft ${item.name}`} onClick={() => {
-        if (window.confirm(`Delete estimate draft “${item.name}”? Approved project estimates stay in construction history.`)) {
-          void persist({ ...campaign, castleEstimates: campaign.castleEstimates?.filter(entry => entry.id !== item.id) }, 'Estimate draft deleted.')
-        }
+        confirm({ title: 'Delete estimate draft?', message: `Delete “${item.name}”? Approved project estimates stay in construction history.`,
+          label: 'Delete draft', danger: true },
+        () => void persist({ ...campaign, castleEstimates: campaign.castleEstimates?.filter(entry => entry.id !== item.id) }, 'Estimate draft deleted.'))
       }}><span aria-hidden="true">🗑︎</span></button>
     </div>)}
   </div>
@@ -259,9 +260,9 @@ export function EstimatePanel({ campaign, save, help }: Props) {
               onClick={() => { setModuleEdit(item); idle() }}><span aria-hidden="true">✎</span></button>
             <button type="button" className="catalog-icon danger" aria-label={`Remove ${item.name}`} title={`Remove ${item.name}`}
               onClick={() => {
-                if (window.confirm(`Remove ${item.name} from this campaign’s catalog? Existing estimates will keep their copy.`)) {
-                  void saveCatalog(catalog.filter(module => module.id !== item.id), `${item.name} removed from the campaign catalog.`)
-                }
+                confirm({ title: 'Remove catalog entry?', message: `Remove ${item.name} from this campaign’s catalog? Existing estimates keep their copy.`,
+                  label: 'Remove entry', danger: true },
+                () => void saveCatalog(catalog.filter(module => module.id !== item.id), `${item.name} removed from the campaign catalog.`))
               }}><span aria-hidden="true">🗑︎</span></button>
           </div>
           {reorderMenu === item.id && canReorder && <div className="catalog-move-actions button-group">
