@@ -97,6 +97,7 @@ export function EstimatePanel({ campaign, save, help }: Props) {
     (reviewing && (confirmChange || !!closures.length || !!projectId || !!holdingId || effective !== undefined ||
       start !== current || workWeek !== calendar.weekdays.length || festivalPace !== 0)))
   const filtered = catalog.filter(item => item.name.toLowerCase().includes(catalogQuery.trim().toLowerCase()))
+  const canAddModule = filtered.some(item => item.id === moduleId)
   const canReorder = !catalogQuery.trim() && !busy
   const holdings = campaign.holdings ?? []
   const holding = holdings.find(item => item.id === holdingId) ?? holdings[0]
@@ -293,7 +294,7 @@ export function EstimatePanel({ campaign, save, help }: Props) {
         {item.unit} · {item.dimensions || 'No dimensions supplied'} · Tech {item.technology} · {formatGp(item.cost)} · {item.labor / 100} worker-weeks
       </p>)}
       <div className="button-group">
-        <button disabled={!filtered.some(item => item.id === moduleId)} onClick={addModule}>Add module line</button>
+        <button className={canAddModule ? 'primary' : undefined} disabled={!canAddModule} onClick={addModule}>Add module line</button>
         <button onClick={() => editDraft({ lines: [...draft.lines, { id: crypto.randomUUID(), description: '', unit: '', quantity: 100, cost: 0, labor: 0 }] })}>Add custom line</button>
       </div>
       {draft.lines.map(item => <EstimateLineEditor key={item.id} item={item}

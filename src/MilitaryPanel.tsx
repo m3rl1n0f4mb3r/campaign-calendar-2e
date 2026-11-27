@@ -98,13 +98,15 @@ export function MilitaryPanel({ calendar, clock, holding, military, initialDay, 
       </section>
     })}
     {!!military.supplies.length && <details><summary>Extra supply expenses</summary><ul>{military.supplies.map(supply => {
+      const unit = military.units.find(item => item.id === supply.unitId)
+      const scope = unit?.name ?? (supply.unitId ? 'Unit unavailable' : 'Holding-wide')
       const source = `supply:${supply.id}`
       const hasDecision = (turn: { inputs: { military?: { decisions: { charge: { id: string } }[] } } }) =>
         turn.inputs.military?.decisions.some(decision => decision.charge.id === source)
       const posted = holding.turns.find(hasDecision)
       const replay = holding.replay.find(hasDecision)
       return <li key={supply.id} className="form">
-        <span>{supply.title} · {formatGp(supply.amount)} {supply.balance} · {date(supply.day)} · First eligible {date(supply.target)}</span>
+        <span>{supply.title} · <strong>{scope}</strong> · {formatGp(supply.amount)} {supply.balance} · {date(supply.day)} · First eligible {date(supply.target)}</span>
         {posted || replay ? <button type="button" onClick={() => openDecision((posted ?? replay)!.month, !!posted, day)}>{posted ? 'Open turn decision' : 'Open replay decision'}</button> :
           <div className="button-group">
             <button type="button" onClick={() => leave(() => { setDetails(undefined); setEditingSupply(supply); setEdit('supply') })}>Edit proposal</button>
