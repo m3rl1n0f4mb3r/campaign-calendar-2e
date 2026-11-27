@@ -9,12 +9,12 @@ type Props = {
   calendar: Calendar; campaignName: string; current: number; showMoons: boolean
   currentView: PrintSection; viewQuery?: string
   entries: (from: number, to: number, query?: string) => PrintEntry[]
-  moonList: (day: number) => ReactNode; moonLegend: ReactNode; close: () => void
+  moonList: (day: number) => ReactNode; moonLegend: ReactNode; close: () => void; help: () => void
 }
 type Options = { sections: PrintSection[]; query?: string; kinds: ReadonlySet<PrintKind>; moons: boolean; pageBreaks: boolean }
 const kinds = Object.keys(printKinds) as PrintKind[]
 
-export function PrintCalendar({ calendar, campaignName, current, showMoons, currentView, viewQuery, entries, moonList, moonLegend, close }: Props) {
+export function PrintCalendar({ calendar, campaignName, current, showMoons, currentView, viewQuery, entries, moonList, moonLegend, close, help }: Props) {
   const year = dateParts(calendar, current).year
   const [range, setRange] = useState<'current' | 'periods'>('current')
   const [start, setStart] = useState(() => dateIndex(calendar, { year, period: calendar.periods[0].id, day: 1 }))
@@ -41,6 +41,7 @@ export function PrintCalendar({ calendar, campaignName, current, showMoons, curr
       flushSync(() => setReport({ sections, kinds: included, moons, pageBreaks, query: range === 'current' ? viewQuery : undefined }))
       window.print()
     }}>
+      <button type="button" onClick={help}>Help with printing</button>
       <label>Print range<select value={range} onChange={event => { setRange(event.target.value as typeof range); setError('') }}>
         <option value="current">Current view</option><option value="periods">Choose months or festivals</option>
       </select></label>
@@ -83,7 +84,7 @@ function PrintSectionBody({ calendar, section, events, renderMoons }: {
       const date = Math.max(from, dayOf(event.start))
       return <div className="agenda-row" key={event.key}>
         <div><time>{dateLabel(calendar, date)}</time>{from + 1 !== to && renderMoons?.(date)}</div>
-        <div>{event.title}{(event.time || event.location) && <p>{[event.time, event.location].filter(Boolean).join(' · ')}</p>}</div>
+        <div className={event.color ? 'printed-event-color colored-event' : undefined} style={{ borderInlineStartColor: event.color }}>{event.title}{(event.time || event.location) && <p>{[event.time, event.location].filter(Boolean).join(' · ')}</p>}</div>
       </div>
     }) : <p>No events in this date range.</p>}
   </div>
@@ -102,7 +103,7 @@ function PrintSectionBody({ calendar, section, events, renderMoons }: {
         return <div className="cell" key={day}>
           <div className="cell-heading"><strong>{dateParts(calendar, day).day}</strong>{renderMoons?.(day)}</div>
           {events.filter(event => event.start < (day + 1) * minutes && event.end > day * minutes).map(event =>
-            <div className="event-chip" key={event.key}><span>{event.time && event.kind === 'timed' && `${event.time} `}{event.title}</span></div>
+            <div className={event.color ? 'event-chip printed-event-color colored-event' : 'event-chip'} style={{ borderInlineStartColor: event.color }} key={event.key}><span>{event.time && event.kind === 'timed' && `${event.time} `}{event.title}</span></div>
           )}
         </div>
       })}</div>

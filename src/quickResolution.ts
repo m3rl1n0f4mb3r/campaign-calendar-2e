@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { saveEngagement, type Engagement } from './engagement'
+import { participantRole, saveEngagement, type Engagement } from './engagement'
 import type { Campaign } from './storage'
 
 const id = z.string().min(1).max(120)
@@ -47,6 +47,14 @@ type StepInput = { kind: 'round' | 'phase' | 'morale' | 'rally'; roll: number; d
   | { kind: 'allow' | 'pursue' }
   | { kind: 'conditions'; side: Side; conditions: Conditions; morale?: number }
   | { kind: 'finish'; winner: Winner; note: string }
+
+export function initialForceName(kind: Resolution['kind'], side: Side, engagement?: Engagement) {
+  const role = side === 'a' ? 'attacker' : 'defender'
+  const fallback = kind === 'siege' ? side === 'a' ? 'Attackers' : 'Defenders' : side === 'a' ? 'Force A' : 'Force B'
+  const names = [...new Set(engagement?.participants.filter(participant => participantRole(participant) === role).map(participant => participant.name))]
+  const combined = names.join(', ')
+  return combined && combined.length <= 120 ? combined : fallback
+}
 
 export function defaultForce(name: string): Force {
   return { name, points: 100, morale: 10, commander: 0, casters: false, supernatural: false, engines: false, flying: false, supplies: 'supplied' }
@@ -243,7 +251,7 @@ export function approveResolution(campaign: Campaign, resolution: Resolution, ou
   if (outcome.trim() !== resolutionSummary(stored) && !reason.trim()) throw new Error('Enter a reason for overriding the mechanical result.')
   const engagement: Engagement = existing ?? { id: crypto.randomUUID(), title: stored.title, kind: stored.kind, start: stored.start,
     location: '', notes: '', outcome: '', consequences: [], participants: sides.map(side => ({
-      id: crypto.randomUUID(), name: stored.forces[side].name, side: stored.kind === 'siege' ? side === 'a' ? 'Attackers' : 'Defenders' : side.toUpperCase(),
+      id: crypto.randomUUID(), name: stored.forces[side].name, role: side === 'a' ? 'attacker' : 'defender', side: stored.kind === 'siege' ? side === 'a' ? 'Attackers' : 'Defenders' : side.toUpperCase(),
     })) }
   const end = stored.kind === 'siege' && resolutionState(stored).winner !== 'undecided' ? resolutionState(stored).day : existing?.end
   const reported = [outcome.trim(), narrative.trim()].filter(Boolean).join('\n\n')

@@ -1,3 +1,4 @@
+import { useConfirmAction, useDialogDraft } from './Dialog'
 import { useEffect, useState } from 'react'
 import { dateIndex, dateLabel, dateParts, displayYear, yearLabel, type Calendar } from './calendar'
 import {
@@ -12,11 +13,12 @@ export type InitialConfidenceCheck = { id: string; day: number; title: string }
 
 type Props = {
   calendar: Calendar; clock: number; holding: Holding; revision: string | null; selectedEvent?: string; initialCheck?: InitialConfidenceCheck
-  help: () => void
+  help: () => void; backLabel?: string
   save: (holding: Holding) => Promise<boolean>; back: () => void; openReceipt: (month: TurnMonth) => void; reopen: (month: TurnMonth) => void
 }
 
-export function ConfidencePanel({ calendar, clock, holding, revision, selectedEvent, initialCheck, save, back, openReceipt, reopen, help }: Props) {
+export function ConfidencePanel({ calendar, clock, holding, revision, selectedEvent, initialCheck, save, back, backLabel = 'Back to holdings', openReceipt, reopen, help }: Props) {
+  const confirm = useConfirmAction()
   const state = holding.confidence ?? initialConfidence()
   const start = dateIndex(calendar, { ...holding.first, day: 1 })
   const due = nextReview(calendar, start, state)
@@ -73,6 +75,13 @@ export function ConfidencePanel({ calendar, clock, holding, revision, selectedEv
   const exceedsGuideline = Math.abs(change) > 10 || Math.abs(monthly) > 50 || absolute > 50
   const [approveGuideline, setApproveGuideline] = useState(false)
 
+  useDialogDraft(base !== state.base || startDate !== (state.start ?? start) ||
+    JSON.stringify(abilities) !== JSON.stringify(state.baseRoll?.abilities ?? Array<number>(6).fill(10)) ||
+    JSON.stringify(baseRoll) !== JSON.stringify(state.baseRoll) || optionsChanged || !!generation ||
+    (!!editing && JSON.stringify(editing) !== JSON.stringify(state.events.find(item => item.id === editing.id)) && !!(editing.title || editing.notes || editing.day !== clock || editing.disaster)) ||
+    (!!custom && !!custom.title) || !!effectTitle || !!effectAmount ||
+    (checkOpen && (!!change || !!modifier || notes !== (linkedCheck?.title ?? '') || checkDate !== (linkedCheck?.day ?? state.events.find(event => event.id === eventSource)?.resolvedDay ?? clock) || approveGuideline)))
+
   async function commit(next: Confidence, after?: () => void) {
     if (busy || stale) return
     setBusy(true)
@@ -107,15 +116,20 @@ export function ConfidencePanel({ calendar, clock, holding, revision, selectedEv
     const ids = new Set(state.effects.filter(effect => sources.has(effect.source)).map(effect => effect.id))
     return holding.turns.filter(turn => turn.inputs.effectIds?.some(id => ids.has(id)))
   }
-  function confirmEventChange(event: DominionEvent) {
-    const receipts = linked(event.id)
-    return receipts.length === 0 || window.confirm(`This event is linked to recorded turns closing ${receipts.map(turn => dateLabel(calendar, closingDay(calendar, turn.month))).join(', ')}. Keep those receipts and change the event?`)
-  }
   function editEvent(event: DominionEvent) {
     const before = state.events.find(item => item.id === event.id)
-    if (before && !confirmEventChange(before)) return
+    const receipts = before ? linked(before.id) : []
+    const removing = event.status === 'removed'
     const events = before ? state.events.map(item => item.id === event.id ? event : item) : [...state.events, event]
-    void commit({ ...state, events }, () => setEditing(undefined))
+    const apply = () => void commit({ ...state, events }, () => setEditing(undefined))
+    if (receipts.length || removing) confirm({
+      title: removing ? 'Remove dominion event?' : 'Change linked event?',
+      message: [removing && `Remove “${event.title}” from the calendar?`,
+        receipts.length > 0 && `Recorded turns closing ${receipts.map(turn => dateLabel(calendar, closingDay(calendar, turn.month))).join(', ')} keep their posted receipts.`,
+      ].filter(Boolean).join(' '),
+      label: removing ? 'Remove event' : 'Save event change', danger: removing,
+    }, apply)
+    else apply()
   }
   function makeEvent(title = '', date = clock, disaster = false): DominionEvent {
     return { id: crypto.randomUUID(), title, day: date, disaster, status: 'scheduled', notes: '' }
@@ -162,7 +176,7 @@ export function ConfidencePanel({ calendar, clock, holding, revision, selectedEv
 
   if (stale) return <div className="form">
     <p className="warning" role="alert">Campaign data changed. Open the holding again to review the latest records.</p>
-    <button onClick={back}>Back to holdings</button>
+    <button onClick={back}>{backLabel}</button>
   </div>
   const band = confidenceBand(state.current)
   const projected = confidenceBand(clampConfidence(clampConfidence(confidenceAt(state, checkDate) + change) + modifier))
@@ -318,10 +332,7 @@ export function ConfidencePanel({ calendar, clock, holding, revision, selectedEv
             {isDue && <><button onClick={() => editEvent({ ...event, status: 'resolved', resolvedDay: clock })}>Resolve event</button>
               <button onClick={() => editEvent({ ...event, status: 'dismissed' })}>Dismiss</button></>}
             {event.status === 'resolved' && event.disaster && <button onClick={() => startCheck(event)}>Review confidence</button>}
-            <button className="danger" onClick={() => {
-              if (!receipts.length && !window.confirm(`Remove ${event.title} from the calendar?`)) return
-              editEvent({ ...event, status: 'removed' })
-            }}>Remove event</button>
+            <button className="danger" onClick={() => editEvent({ ...event, status: 'removed' })}>Remove event</button>
           </div>
         </section>
       })}
@@ -358,7 +369,7 @@ export function ConfidencePanel({ calendar, clock, holding, revision, selectedEv
         return <p key={effect.id}>{effect.title} · {formatGp(effect.amount)} · {dateLabel(calendar, closingDay(calendar, effect.target))} · {posted ? 'Posted' : 'Available in turn preview'}</p>
       })}
     </fieldset>
-    <button onClick={back}>Back to holdings</button>
+    <button onClick={back}>{backLabel}</button>
   </div>
 }
 

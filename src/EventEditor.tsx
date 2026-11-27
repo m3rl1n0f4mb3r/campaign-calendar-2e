@@ -1,18 +1,21 @@
 import { useState } from 'react'
 import { dateParts, mod, type Calendar } from './calendar'
 import { dayOf, minutes, type EventData, type Occurrence, type Rule } from './events'
+import { useChangedDraft, useDialogLeave } from './Dialog'
 import { DateField } from './DateField'
 
 export type Scope = 'one' | 'future' | 'all'
 const clock = (value: number) => `${String(Math.floor(mod(value, minutes) / 60)).padStart(2, '0')}:${String(mod(value, 60)).padStart(2, '0')}`
 const timeOf = (value: string) => Number(value.slice(0, 2)) * 60 + Number(value.slice(3))
 
-export function EventEditor({ calendar, day, event, save, close }: {
-  calendar: Calendar; day: number; event?: Occurrence; save: (scope: Scope, data?: EventData, rule?: Rule) => void; close: () => void
+export function EventEditor({ calendar, day, event, save, close, help }: {
+  calendar: Calendar; day: number; event?: Occurrence; save: (scope: Scope, data?: EventData, rule?: Rule) => void; close: () => void; help: () => void
 }) {
   const [scope, setScope] = useState<Scope>(event?.series.rule ? 'one' : 'all')
   const [data, setData] = useState<EventData>(event ?? { title: '', notes: '', location: '', color: '#52745e', start: day * minutes, end: (day + 1) * minutes, allDay: true })
   const [rule, setRule] = useState<Rule | undefined>(event?.series.rule)
+  const leave = useDialogLeave()
+  useChangedDraft([data, rule], [event ? scope === 'all' ? event.series : event : { title: '', notes: '', location: '', color: '#52745e', start: day * minutes, end: (day + 1) * minutes, allDay: true }, event?.series.rule])
   const [error, setError] = useState('')
   const startDay = dayOf(data.start)
   const endDay = dayOf(data.end - (data.allDay ? minutes : 0))
@@ -24,6 +27,7 @@ export function EventEditor({ calendar, day, event, save, close }: {
     if (seriesEdit && rule?.until !== undefined && rule.until < startDay) { setError('The repeat end date must be on or after the event start.'); return }
     save(scope, { ...data, title: data.title.trim() }, seriesEdit ? rule : undefined)
   }}>
+    <button type="button" onClick={help}>Help with events</button>
     {event?.series.rule && <label>Apply changes to<select value={scope} onChange={change => {
       const value = change.target.value as Scope
       setScope(value)
@@ -61,6 +65,6 @@ export function EventEditor({ calendar, day, event, save, close }: {
       {isFestival && ['monthly', 'yearly'].includes(rule.frequency) && <label>Festival repeats<select value={rule.festival} onChange={e => setRule({ ...rule, festival: e.target.value as Rule['festival'] })}><option value="previous">Last day of previous month</option><option value="next">First day of next month</option><option value="festival">Same festival day each year</option></select></label>}
     </>}
     {error && <p role="alert" className="error">{error}</p>}
-    <div className="actions">{event && <button type="button" className="danger" onClick={() => save(scope)}>Delete</button>}<button type="button" onClick={close}>Cancel</button><button className="primary">Save event</button></div>
+    <div className="actions">{event && <button type="button" className="danger" onClick={() => save(scope)}>Delete</button>}<button type="button" onClick={() => leave(close)}>Cancel</button><button className="primary">Save event</button></div>
   </form>
 }

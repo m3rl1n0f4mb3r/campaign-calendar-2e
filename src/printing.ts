@@ -10,7 +10,7 @@ export const printKinds = {
   engagement: 'Battles and sieges',
 }
 export type PrintKind = keyof typeof printKinds
-export type PrintEntry = { key: string; title: string; start: number; end: number; kind: PrintKind; time?: string; location?: string }
+export type PrintEntry = { key: string; title: string; start: number; end: number; kind: PrintKind; time?: string; location?: string; color?: string }
 export type PrintSection = { from: number; to: number; title: string; grid: boolean }
 
 export function printPeriods(calendar: Calendar, from: number, through: number): PrintSection[] {

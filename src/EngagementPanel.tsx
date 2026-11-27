@@ -1,9 +1,10 @@
 import { lazy, Suspense, useState } from 'react'
+import { useConfirmAction, useChangedDraft, useDialogDraft, useDialogLeave } from './Dialog'
 import { dateLabel } from './calendar'
 import { DateField } from './DateField'
 import { closingDay, formatGp, type TurnMonth } from './domain'
 import {
-  applyConsequence, correctEngagementExpense, expenseTarget, involvesHolding, replaceConsequence, rosterStrength, saveEngagement,
+  applyConsequence, correctEngagementExpense, deleteEngagement, engagementDeleteBlocker, expenseTarget, involvesHolding, participantRole, participantRoles, replaceConsequence, rosterStrength, saveEngagement,
   type Consequence, type Engagement, type EngagementParticipant,
 } from './engagement'
 import type { Campaign } from './storage'
@@ -17,11 +18,12 @@ export type EngagementLink =
   | { kind: 'expense'; holdingId: string; month: TurnMonth }
   | { kind: 'confidence'; holdingId: string; id: string; day: number; title: string }
 
-export function EngagementPanel({ campaign, revision, selected, initialId, initialHolding, save, openLink, help }: {
+export default function EngagementPanel({ campaign, revision, selected, initialId, initialHolding, save, openLink, backToHoldings, help, quickHelp }: {
   campaign: Campaign; revision: string | null; selected: number; initialId?: string; initialHolding?: string
-  save: (campaign: Campaign) => Promise<boolean>; openLink: (link: EngagementLink) => void; help: () => void
+  backToHoldings?: () => void; save: (campaign: Campaign) => Promise<boolean>; openLink: (link: EngagementLink, sourceId: string, sourceHolding?: string) => void; help: () => void; quickHelp: () => void
 }) {
   const [id, setId] = useState(initialId)
+  const [showArchived, setShowArchived] = useState(false)
   const [quick, setQuick] = useState(false)
   const [draft, setDraft] = useState<Engagement>()
   const [editRevision, setEditRevision] = useState(revision)
@@ -33,6 +35,14 @@ export function EngagementPanel({ campaign, revision, selected, initialId, initi
   const item = items.find(entry => entry.id === id)
   const date = (day: number) => dateLabel(calendar, day)
   const holdings = campaign.holdings ?? []
+  const blocker = item && engagementDeleteBlocker(campaign, item)
+  const follow = (link: EngagementLink) => {
+    if (item) leave(() => openLink(link, item.id, initialHolding))
+  }
+  const confirm = useConfirmAction()
+  const leave = useDialogLeave()
+  useDialogDraft(!!draft && (item ? JSON.stringify(draft) !== JSON.stringify(item) :
+    !!(draft.title || draft.notes || draft.outcome || draft.location || draft.participants.length || draft.kind !== 'battle' || draft.start !== selected || draft.holdingId !== initialHolding)))
   const defaultDay = item?.end ?? (item?.kind === 'battle' ? item.start : Math.max(item?.start ?? current, current))
   async function commit(action: () => Campaign, done?: () => void) {
     setError('')
@@ -46,53 +56,76 @@ export function EngagementPanel({ campaign, revision, selected, initialId, initi
     finally { setBusy(false) }
   }
 
-  if (quick) return <Suspense fallback={<p role="status">Loading quick resolution…</p>}><QuickResolutionPanel campaign={campaign} selected={selected} engagement={item} save={save}
+  if (quick) return <Suspense fallback={<p role="status">Loading quick resolution…</p>}><QuickResolutionPanel campaign={campaign} selected={selected} engagement={item} save={save} help={quickHelp}
     back={() => setQuick(false)} openEngagement={id => { setId(id); setQuick(false) }}/></Suspense>
 
   return <div className="form">
     <div className="guide-context"><button type="button" onClick={help}>Help with battles and sieges</button>
-      {(item || draft) && <button type="button" onClick={() => { setId(undefined); setDraft(undefined); setProposal(undefined); setError('') }}>Back to engagements</button>}</div>
+      {(!item && !draft && backToHoldings) && <button type="button" onClick={backToHoldings}>Back to holdings</button>}
+      {(item || draft) && <button type="button" onClick={() => leave(() => { setId(undefined); setDraft(undefined); setProposal(undefined); setError('') })}>Back to engagements</button>}</div>
+    {id && !item && <p role="status">This engagement is no longer available.</p>}
     {error && <p className="error" role="alert">{error}</p>}
     {draft ? <form className="form" onSubmit={event => {
       event.preventDefault()
       void commit(() => saveEngagement(campaign, { ...draft, consequences: item?.consequences ?? [] }), () => { setId(draft.id); setDraft(undefined) })
     }}>
-      <label>Engagement name<input required maxLength={120} value={draft.title} onChange={e => setDraft({ ...draft, title: e.target.value })}/></label>
-      <label>Type<select value={draft.kind} onChange={e => setDraft({ ...draft, kind: e.target.value as Engagement['kind'], end: undefined })}>
-        <option value="battle">Battle</option><option value="siege">Siege</option>
-      </select></label>
-      <DateField calendar={calendar} label={draft.kind === 'battle' ? 'Battle date' : 'Siege start'} value={draft.start} onChange={start => setDraft({ ...draft, start })}/>
-      {draft.kind === 'siege' && <>
-        <label className="check"><input type="checkbox" checked={draft.end !== undefined} onChange={e => setDraft({ ...draft, end: e.target.checked ? Math.max(current, draft.start) : undefined })}/> Set siege end date</label>
-        {draft.end !== undefined && <DateField calendar={calendar} label="Siege end" value={draft.end} onChange={end => setDraft({ ...draft, end })}/>}
-      </>}
-      <label>Location<input maxLength={120} value={draft.location} onChange={e => setDraft({ ...draft, location: e.target.value })}/></label>
-      <HoldingField holdings={holdings} value={draft.holdingId} change={holdingId => setDraft({ ...draft, holdingId, projectId: undefined })}/>
-      {draft.holdingId && <label>Location project<select value={draft.projectId ?? ''} onChange={e => setDraft({ ...draft, projectId: e.target.value || undefined })}>
-        <option value="">No project link</option>{holdings.find(holding => holding.id === draft.holdingId)?.projects?.map(project =>
-          <option key={project.id} value={project.id}>{project.name}</option>)}
-      </select></label>}
-      <fieldset className="form"><legend>Participants</legend>
+      <section className="form workflow-section">
+        <h4>Engagement details</h4>
+        <label>Engagement name<input required maxLength={120} value={draft.title} onChange={e => setDraft({ ...draft, title: e.target.value })}/></label>
+        <label>Type<select value={draft.kind} onChange={e => setDraft({ ...draft, kind: e.target.value as Engagement['kind'], end: undefined })}>
+          <option value="battle">Battle</option><option value="siege">Siege</option>
+        </select></label>
+        <DateField calendar={calendar} label={draft.kind === 'battle' ? 'Battle date' : 'Siege start'} value={draft.start} onChange={start => setDraft({ ...draft, start })}/>
+        {draft.kind === 'siege' && <>
+          <label className="check"><input type="checkbox" checked={draft.end !== undefined} onChange={e => setDraft({ ...draft, end: e.target.checked ? Math.max(current, draft.start) : undefined })}/> Set siege end date</label>
+          {draft.end !== undefined && <DateField calendar={calendar} label="Siege end" value={draft.end} onChange={end => setDraft({ ...draft, end })}/>}
+        </>}
+        <label>Location<input maxLength={120} value={draft.location} onChange={e => setDraft({ ...draft, location: e.target.value })}/></label>
+        <HoldingField holdings={holdings} value={draft.holdingId} change={holdingId => setDraft({ ...draft, holdingId, projectId: undefined })}/>
+        {draft.holdingId && <label>Location project<select value={draft.projectId ?? ''} onChange={e => setDraft({ ...draft, projectId: e.target.value || undefined })}>
+          <option value="">No project link</option>{holdings.find(holding => holding.id === draft.holdingId)?.projects?.map(project =>
+            <option key={project.id} value={project.id}>{project.name}</option>)}
+        </select></label>}
+      </section>
+      <section className="form workflow-section">
+        <h4>Participants</h4>
         {draft.participants.map(part => <ParticipantFields key={part.id} part={part} holdings={holdings} day={draft.start}
           change={value => setDraft({ ...draft, participants: draft.participants.map(person => person.id === part.id ? value : person) })}
           remove={() => setDraft({ ...draft, participants: draft.participants.filter(person => person.id !== part.id) })}/>)}
-        <button type="button" onClick={() => setDraft({ ...draft, participants: [...draft.participants, { id: crypto.randomUUID(), name: '', side: '' }] })}>Add participant</button>
-      </fieldset>
-      <label>Outcome<textarea value={draft.outcome} onChange={e => setDraft({ ...draft, outcome: e.target.value })}/></label>
-      <label>Notes<textarea value={draft.notes} onChange={e => setDraft({ ...draft, notes: e.target.value })}/></label>
-      <div className="actions"><button type="button" onClick={() => setDraft(undefined)}>Cancel</button><button className="primary" disabled={busy}>Save engagement</button></div>
+        <button type="button" onClick={() => setDraft({ ...draft, participants: [...draft.participants, { id: crypto.randomUUID(), name: '', side: '', role: 'unassigned' }] })}>Add participant</button>
+      </section>
+      <section className="form workflow-section">
+        <h4>Outcome and notes</h4>
+        <label>Outcome<textarea value={draft.outcome} onChange={e => setDraft({ ...draft, outcome: e.target.value })}/></label>
+        <label>Notes<textarea value={draft.notes} onChange={e => setDraft({ ...draft, notes: e.target.value })}/></label>
+      </section>
+      <div className="actions"><button type="button" onClick={() => leave(() => setDraft(undefined))}>Cancel</button><button className="primary" disabled={busy}>Save engagement</button></div>
     </form> : item ? <>
-      <h3>{item.title}</h3>
+      <h3>{item.title}{item.archived && ' · Archived'}</h3>
       <p>{item.kind === 'battle' ? 'Battle' : 'Siege'} · {date(item.start)}{item.kind === 'siege' && (item.end === undefined ? ' · No end date' : ` – ${date(item.end)}`)}
         {item.location && ` · ${item.location}`}</p>
       {item.holdingId && <p>Location holding: {holdings.find(holding => holding.id === item.holdingId)?.name}
         {item.projectId && ` · ${holdings.find(holding => holding.id === item.holdingId)?.projects?.find(project => project.id === item.projectId)?.name ?? 'Project unavailable'}`}</p>}
       {item.outcome && <p className="domain-notes">{item.outcome}</p>}
       {item.notes && <p className="domain-notes">{item.notes}</p>}
-      {!!item.participants.length && <ul>{item.participants.map(person => <li key={person.id}>{person.side} · {person.name}
+      {!!item.participants.length && <ul>{item.participants.map(person => <li key={person.id}>{person.name} · {participantRoles[participantRole(person)]}{person.side && ` · ${person.side}`}
         {person.before !== undefined && ` · Before ${person.before}`}{person.after !== undefined && ` · After ${person.after}`}</li>)}</ul>}
       <button type="button" onClick={() => setQuick(true)}>Quick resolution</button>
       <button type="button" onClick={() => { setEditRevision(revision); setDraft(item); setProposal(undefined) }}>Edit engagement</button>
+      <div className="button-group">
+        <button type="button" disabled={busy} onClick={() => leave(() => {
+          const update = () => void commit(() => saveEngagement(campaign, { ...item, archived: !item.archived }), () => setProposal(undefined))
+          if (item.archived) update()
+          else confirm({ title: 'Archive engagement?', message: `“${item.title}” will be hidden from the calendar, search, print, and the active siege list. Linked records stay available.`,
+            label: 'Archive engagement' }, update)
+        })}>{item.archived ? 'Unarchive engagement' : 'Archive engagement'}</button>
+        {!blocker && <button type="button" className="danger" disabled={busy} onClick={() => leave(() => {
+          confirm({ title: 'Delete engagement?', message: `Deleting “${item.title}” removes its calendar entries and unapplied proposals.`,
+            label: 'Delete engagement', danger: true },
+          () => void commit(() => deleteEngagement(campaign, item.id), () => { setId(undefined); setProposal(undefined) }))
+        })}>Delete engagement</button>}
+      </div>
+      {blocker && <p className="muted">{blocker}</p>}
       <fieldset className="form" disabled={busy}><legend>Consequences</legend>
         {!item.consequences.length && <p>No consequences recorded.</p>}
         {item.consequences.map(effect => {
@@ -127,16 +160,16 @@ export function EngagementPanel({ campaign, revision, selected, initialId, initi
                 <option key={cost.id} value={cost.id}>{cost.title} · {formatGp(-cost.amount)}</option>)}</select>
             </label>}
             {applied && <div className="button-group">
-              {effect.kind === 'troops' && roster && <button type="button" onClick={() => openLink({ kind: 'troops', holdingId: effect.holdingId, unitId: effect.unitId, day: effect.day, correction: effect.id })}>Open roster correction</button>}
-              {effect.kind === 'repair' && effect.projectId && <button type="button" onClick={() => openLink({ kind: 'repair', holdingId: effect.holdingId, projectId: effect.projectId! })}>Open repair project</button>}
-              {check && <button type="button" onClick={() => openLink({ kind: 'confidence', holdingId: effect.holdingId, id: effect.id, day: check.day, title: item.title })}>Open confidence history</button>}
-              {receipt && <button type="button" onClick={() => openLink({ kind: 'expense', holdingId: effect.holdingId, month: receipt.month })}>Open posted receipt</button>}
+              {effect.kind === 'troops' && roster && <button type="button" onClick={() => follow({ kind: 'troops', holdingId: effect.holdingId, unitId: effect.unitId, day: effect.day, correction: effect.id })}>Open roster correction</button>}
+              {effect.kind === 'repair' && effect.projectId && <button type="button" onClick={() => follow({ kind: 'repair', holdingId: effect.holdingId, projectId: effect.projectId! })}>Open repair project</button>}
+              {check && <button type="button" onClick={() => follow({ kind: 'confidence', holdingId: effect.holdingId, id: effect.id, day: check.day, title: item.title })}>Open confidence history</button>}
+              {receipt && <button type="button" onClick={() => follow({ kind: 'expense', holdingId: effect.holdingId, month: receipt.month })}>Open posted receipt</button>}
               {expense && !receipt && <button type="button" onClick={() => { setEditRevision(revision); setProposal(effect) }}>Correct expense</button>}
             </div>}
             {!applied && effect.status === 'proposed' && <div className="button-group">
               <button type="button" onClick={() => { setEditRevision(revision); setProposal(effect) }}>Edit proposal</button>
               {effect.kind === 'confidence' ? <button type="button" disabled={effect.day > current} onClick={() =>
-                openLink({ kind: 'confidence', holdingId: effect.holdingId, id: effect.id, day: effect.day, title: item.title })}>Open confidence review</button>
+                follow({ kind: 'confidence', holdingId: effect.holdingId, id: effect.id, day: effect.day, title: item.title })}>Open confidence review</button>
                 : <button type="button" className="primary" onClick={() => void commit(() => applyConsequence(campaign, item.id, effect.id))}>Approve consequence</button>}
               <button type="button" onClick={() => void commit(() => saveEngagement(campaign, replaceConsequence(item, { ...effect, status: 'declined' })))}>Decline</button>
             </div>}
@@ -153,8 +186,11 @@ export function EngagementPanel({ campaign, revision, selected, initialId, initi
       <button type="button" className="primary" onClick={() => { setEditRevision(revision); setDraft({
         id: crypto.randomUUID(), title: '', kind: 'battle', start: selected, location: '', holdingId: initialHolding, participants: [], outcome: '', notes: '', consequences: [],
       }) }}>New battle or siege</button>
-      {items.filter(entry => !initialHolding || involvesHolding(entry, initialHolding)).sort((a, b) => b.start - a.start).map(entry =>
-        <button key={entry.id} type="button" onClick={() => setId(entry.id)}>{entry.title} · {date(entry.start)}</button>)}
+      {initialHolding && <p>Showing engagements linked to {holdings.find(holding => holding.id === initialHolding)?.name ?? 'this holding'}.</p>}
+      {items.some(entry => entry.archived && (!initialHolding || involvesHolding(entry, initialHolding))) &&
+        <label className="check"><input type="checkbox" checked={showArchived} onChange={e => setShowArchived(e.target.checked)}/> Show archived engagements</label>}
+      {items.filter(entry => (showArchived || !entry.archived) && (!initialHolding || involvesHolding(entry, initialHolding))).sort((a, b) => b.start - a.start).map(entry =>
+        <button key={entry.id} type="button" onClick={() => setId(entry.id)}>{entry.title} · {date(entry.start)}{entry.archived && ' · Archived'}</button>)}
     </>}
   </div>
 }
@@ -173,11 +209,14 @@ function ParticipantFields({ part, holdings, day, change, remove }: {
   change: (value: EngagementParticipant) => void; remove: () => void
 }) {
   const holding = holdings.find(item => item.id === part.holdingId)
-  return <fieldset className="form"><legend>{part.name || 'Participant'}</legend>
+  return <fieldset className="form engagement-participant"><legend>{part.name || 'Participant'}</legend>
     <div className="form-row">
-      <label>Side<input required maxLength={120} value={part.side} onChange={e => change({ ...part, side: e.target.value })}/></label>
+      <label>Role<select value={participantRole(part)} onChange={e => change({ ...part, role: e.target.value as EngagementParticipant['role'] })}>
+        <option value="unassigned">Unassigned</option><option value="attacker">Attacker</option><option value="defender">Defender</option>
+      </select></label>
       <label>Participant name<input required maxLength={120} value={part.name} onChange={e => change({ ...part, name: e.target.value })}/></label>
     </div>
+    <label>Side name (optional)<input maxLength={120} value={part.side} onChange={e => change({ ...part, side: e.target.value })}/></label>
     <HoldingField holdings={holdings} value={part.holdingId} change={holdingId => change({ ...part, holdingId, unitId: undefined })}/>
     {holding && <label>Roster unit<select value={part.unitId ?? ''} onChange={e => {
       const unit = holding.military?.units.find(item => item.id === e.target.value)
@@ -212,6 +251,7 @@ function ConsequenceFields({ campaign, engagement, day, original, submit, cancel
   const strength = rosterStrength(holding, unitId, effective)
   const project = holding?.projects?.find(item => item.id === projectId)
   const editingExpense = original?.status === 'applied'
+  useChangedDraft([kind, holdingId, effective, unitId, delta, title, amount, workDays, projectId, costId, balance])
   const parsedAmount = (input: HTMLInputElement) => input.value === '' ? undefined : Math.round(input.valueAsNumber * 100)
   return <form className="form" onSubmit={event => {
     event.preventDefault()

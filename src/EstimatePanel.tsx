@@ -1,3 +1,4 @@
+import { useConfirmAction, useDialogDraft, useDialogLeave } from './Dialog'
 import { useMemo, useRef, useState } from 'react'
 import { dateLabel, type Calendar } from './calendar'
 import { DateField } from './DateField'
@@ -66,6 +67,7 @@ export function EstimateHistory({ snapshots, calendar }: { snapshots?: EstimateS
 export function EstimatePanel({ campaign, save, help }: Props) {
   const { calendar, current } = campaign
   const [screen, setScreen] = useState<'list' | 'estimate' | 'catalog'>('list')
+  const [initialDraft, setInitialDraft] = useState<string>()
   const [draft, setDraft] = useState<Estimate>()
   const [moduleEdit, setModuleEdit] = useState<CastleModule>()
   const [catalogQuery, setCatalogQuery] = useState('')
@@ -87,7 +89,15 @@ export function EstimatePanel({ campaign, save, help }: Props) {
   const [reviewing, setReviewing] = useState(false)
 
   const catalog = useMemo(() => campaign.castleCatalog ?? defaultCatalog(), [campaign.castleCatalog])
+  const confirm = useConfirmAction()
+  const leave = useDialogLeave()
+  const savedDraft = (campaign.castleEstimates ?? []).find(item => item.id === draft?.id)
+  useDialogDraft((!!draft && JSON.stringify(draft) !== (savedDraft ? JSON.stringify(savedDraft) : initialDraft)) ||
+    (!!moduleEdit && JSON.stringify(moduleEdit) !== JSON.stringify(catalog.find(item => item.id === moduleEdit.id)) && !!(moduleEdit.name || moduleEdit.unit || moduleEdit.cost || moduleEdit.labor || moduleEdit.dimensions)) ||
+    (reviewing && (confirmChange || !!closures.length || !!projectId || !!holdingId || effective !== undefined ||
+      start !== current || workWeek !== calendar.weekdays.length || festivalPace !== 0)))
   const filtered = catalog.filter(item => item.name.toLowerCase().includes(catalogQuery.trim().toLowerCase()))
+  const canAddModule = filtered.some(item => item.id === moduleId)
   const canReorder = !catalogQuery.trim() && !busy
   const holdings = campaign.holdings ?? []
   const holding = holdings.find(item => item.id === holdingId) ?? holdings[0]
@@ -105,7 +115,7 @@ export function EstimatePanel({ campaign, save, help }: Props) {
     idle()
   }
   const selectDraft = (value: Estimate) => {
-    setDraft(value); setScreen('estimate'); setModuleId(''); setCatalogQuery('')
+    setInitialDraft(JSON.stringify(value)); setDraft(value); setScreen('estimate'); setModuleId(''); setCatalogQuery('')
     setProjectId(''); setEffective(undefined); setStart(current); setWorkWeek(calendar.weekdays.length); setFestivalPace(0); setClosures([])
     setReviewing(false); setConfirmChange(false); idle()
   }
@@ -176,8 +186,16 @@ export function EstimatePanel({ campaign, save, help }: Props) {
   if (screen === 'list') return <div className="form">
     <div className="button-group"><button className="primary" onClick={() => selectDraft(newEstimate())}>New estimate</button>
       <button onClick={() => { setScreen('catalog'); setCatalogQuery(''); idle() }}>Manage module catalog</button><button onClick={help}>Help estimating a castle</button></div>
+{feedback}
     {(campaign.castleEstimates ?? []).length === 0 && <p>No saved estimates in this campaign.</p>}
-    {campaign.castleEstimates?.map(item => <button key={item.id} onClick={() => selectDraft(item)}>{item.name}</button>)}
+    {campaign.castleEstimates?.map(item => <div className="button-group" key={item.id}>
+      <button type="button" onClick={() => selectDraft(item)}>{item.name}</button>
+      <button type="button" className="catalog-icon danger" aria-label={`Delete estimate draft ${item.name}`} onClick={() => {
+        confirm({ title: 'Delete estimate draft?', message: `Delete “${item.name}”? Approved project estimates stay in construction history.`,
+          label: 'Delete draft', danger: true },
+        () => void persist({ ...campaign, castleEstimates: campaign.castleEstimates?.filter(entry => entry.id !== item.id) }, 'Estimate draft deleted.'))
+      }}><span aria-hidden="true">🗑︎</span></button>
+    </div>)}
   </div>
 
   if (screen === 'catalog') return <fieldset className="form" disabled={busy}>
@@ -243,9 +261,9 @@ export function EstimatePanel({ campaign, save, help }: Props) {
               onClick={() => { setModuleEdit(item); idle() }}><span aria-hidden="true">✎</span></button>
             <button type="button" className="catalog-icon danger" aria-label={`Remove ${item.name}`} title={`Remove ${item.name}`}
               onClick={() => {
-                if (window.confirm(`Remove ${item.name} from this campaign’s catalog? Existing estimates will keep their copy.`)) {
-                  void saveCatalog(catalog.filter(module => module.id !== item.id), `${item.name} removed from the campaign catalog.`)
-                }
+                confirm({ title: 'Remove catalog entry?', message: `Remove ${item.name} from this campaign’s catalog? Existing estimates keep their copy.`,
+                  label: 'Remove entry', danger: true },
+                () => void saveCatalog(catalog.filter(module => module.id !== item.id), `${item.name} removed from the campaign catalog.`))
               }}><span aria-hidden="true">🗑︎</span></button>
           </div>
           {reorderMenu === item.id && canReorder && <div className="catalog-move-actions button-group">
@@ -261,7 +279,7 @@ export function EstimatePanel({ campaign, save, help }: Props) {
   return <fieldset className="form" disabled={busy}>
     <legend>Castle estimate</legend>
     <div className="button-group">
-      <button onClick={() => { setDraft(undefined); setScreen('list'); idle() }}>Back to estimates</button>
+      <button onClick={() => leave(() => { setDraft(undefined); setScreen('list'); idle() })}>Back to estimates</button>
       <button onClick={() => { setScreen('catalog'); setCatalogQuery(''); idle() }}>Manage module catalog</button>
       <button onClick={help}>Help estimating a castle</button>
     </div>
@@ -276,7 +294,7 @@ export function EstimatePanel({ campaign, save, help }: Props) {
         {item.unit} · {item.dimensions || 'No dimensions supplied'} · Tech {item.technology} · {formatGp(item.cost)} · {item.labor / 100} worker-weeks
       </p>)}
       <div className="button-group">
-        <button disabled={!filtered.some(item => item.id === moduleId)} onClick={addModule}>Add module line</button>
+        <button className={canAddModule ? 'primary' : undefined} disabled={!canAddModule} onClick={addModule}>Add module line</button>
         <button onClick={() => editDraft({ lines: [...draft.lines, { id: crypto.randomUUID(), description: '', unit: '', quantity: 100, cost: 0, labor: 0 }] })}>Add custom line</button>
       </div>
       {draft.lines.map(item => <EstimateLineEditor key={item.id} item={item}

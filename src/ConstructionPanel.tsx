@@ -1,3 +1,4 @@
+import { useConfirmAction, useChangedDraft, useDialogDraft } from './Dialog'
 import { useState } from 'react'
 import { dateLabel, dateParts, type Calendar } from './calendar'
 import { EstimateHistory } from './EstimatePanel'
@@ -11,7 +12,7 @@ import {
 
 type Props = {
   calendar: Calendar; clock: number; holding: Holding; projects: Project[]; change: (projects: Project[]) => void
-  month?: TurnMonth; selectedProject?: string; help: () => void; backup: () => void; openReceipt?: (month: TurnMonth) => void
+  month?: TurnMonth; selectedProject?: string; help: () => void; backup: () => void; openReceipt?: (month: TurnMonth, projectId: string) => void
 }
 
 const workDays = (units: number) => `${units / 2} work days`
@@ -19,6 +20,8 @@ const paceOptions = <><option value="0">No work</option><option value="1">Half d
 
 export function ConstructionPanel({ calendar, clock, holding, projects, change, month, selectedProject, help, backup, openReceipt }: Props) {
   const [settings, setSettings] = useState<Project>()
+  useDialogDraft(!!settings && JSON.stringify(settings) !== JSON.stringify(projects.find(item => item.id === settings.id)) &&
+    !!(settings.name || settings.budget || settings.notes || settings.target !== undefined))
   const [error, setError] = useState('')
   const [expanded, setExpanded] = useState<string | undefined>(selectedProject)
   const span = month ? periodSpan(calendar, month) : undefined
@@ -59,7 +62,7 @@ export function ConstructionPanel({ calendar, clock, holding, projects, change, 
       <ProjectSummary calendar={calendar} clock={clock} holding={holding} project={project}/>
       {!month && <EstimateHistory snapshots={project.estimates} calendar={calendar}/>}
       {expanded === project.id && <ProjectWork calendar={calendar} clock={clock} holding={holding} project={project}
-        month={month} update={update} backup={backup} openReceipt={openReceipt}/>}
+        month={month} update={update} backup={backup} openReceipt={openReceipt && (month => openReceipt(month, project.id))}/>}
     </section>)}
   </fieldset>
 }
@@ -118,6 +121,7 @@ function ProjectWork({ calendar, clock, project, holding, month, update, backup,
   calendar: Calendar; clock: number; project: Project; holding: Holding; month?: TurnMonth
   update: (project: Project) => void; backup: () => void; openReceipt?: (month: TurnMonth) => void
 }) {
+  const confirm = useConfirmAction()
   const [error, setError] = useState('')
   const [reopen, setReopen] = useState<ProjectReview>()
   const [correct, setCorrect] = useState<number>()
@@ -138,6 +142,8 @@ function ProjectWork({ calendar, clock, project, holding, month, update, backup,
   const [costSource, setCostSource] = useState('')
   const next = dueMonth(calendar, holding)
   const [costDay, setCostDay] = useState(closingDay(calendar, month ?? next))
+  useDialogDraft(!!reopen || correct !== undefined || !!rangeNotes || !!costName || !!costAmount)
+  useChangedDraft([workOverride, rangeFrom, rangeThrough, rangePace, openEnd, rangeReview, balance, costSource, costDay])
   const target = monthAt(calendar, costDay)
   const closed = closingDay(calendar, target) < closingDay(calendar, next)
   const end = confirmedCompletion(project)
@@ -276,7 +282,7 @@ function ProjectWork({ calendar, clock, project, holding, month, update, backup,
       {!!project.costs.length && <ul>{project.costs.map(cost => {
         const receipt = holding.turns.find(turn => turn.inputs.effectIds?.includes(cost.id))
         const replay = holding.replay.some(turn => turn.inputs.effectIds?.includes(cost.id))
-        return <li key={cost.id}>{cost.title} · {formatGp(-cost.amount)} · {date(closingDay(calendar, cost.target))} · {receipt ? 'Posted' : 'Proposed'}
+        return <li key={cost.id}>{cost.title} · {formatGp(-cost.amount)} · {date(closingDay(calendar, cost.target))} <span className={receipt ? 'workflow-status workflow-status-posted' : 'workflow-status'}>{receipt ? 'Posted' : 'Proposed'}</span>
           {receipt && openReceipt && <button type="button" onClick={() => openReceipt(receipt.month)}>Open receipt</button>}
           {!receipt && !replay && <button type="button" onClick={() => post(() => ({
             ...project, costs: project.costs.filter(item => item.id !== cost.id),
@@ -285,7 +291,9 @@ function ProjectWork({ calendar, clock, project, holding, month, update, backup,
       })}</ul>}
     </fieldset>
     {!month && active && <button type="button" className="danger" onClick={() => {
-      if (window.confirm(`Cancel ${project.name}? Its history and any posted ledger receipts will remain.`)) post(() => ({ ...project, canceled: clock }))
+      confirm({ title: 'Cancel project?', message: `Cancel ${project.name}? Its history and posted ledger receipts stay available.`,
+        label: 'Cancel project', cancelLabel: 'Keep project', danger: true },
+      () => post(() => ({ ...project, canceled: clock })))
     }}>Cancel project</button>}
   </div>
 }
@@ -318,6 +326,7 @@ function ReviewEditor({ calendar, clock, project, due, save }: {
     const finish = forecast(calendar, updated)
     revisedForecast = finish === undefined ? 'Paused' : dateLabel(calendar, finish)
   }
+  useChangedDraft([roll, weather, notes, setback, extra, manualExtra, incident])
   function apply(skip: boolean) {
     save({ id: saved?.id ?? crypto.randomUUID(), month: due.month, roll: skip ? undefined : roll, notes,
       incident: skip ? undefined : incident, setbackDice: !skip && severe ? setback : undefined,

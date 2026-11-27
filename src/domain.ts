@@ -51,6 +51,7 @@ export const holdingSchema = z.object({
   families: money, tax: money, services: money, resources: z.array(resource),
   territories: z.array(territory).min(1).refine(uniqueTerritories).optional(),
   confidence: confidenceSchema.optional(),
+  archived: z.boolean().optional(),
   military: militarySchema.optional(),
   projects: z.array(projectSchema).optional(),
   engagementExpenses: z.array(projectCostSchema).optional(),
@@ -263,6 +264,7 @@ export function previewTurn(holding: Holding, month: TurnMonth, values: TurnInpu
 }
 
 export function recordTurn(cal: Calendar, clock: number, holding: Holding, month: TurnMonth, draft: TurnInputs): Holding {
+  if (holding.archived) throw new Error('Unarchive this holding before recording a turn.')
   if (!sameMonth(dueMonth(cal, holding), month) || closingDay(cal, month) > clock) throw new Error('This turn is no longer due. Refresh the preview.')
   const military = validateMilitaryTurn(cal, holding, month, draft.military)
   const result = previewTurn(holding, month, military ? { ...draft, military } : draft)
