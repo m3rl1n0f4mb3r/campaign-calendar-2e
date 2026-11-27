@@ -1,4 +1,4 @@
-:root { font-family: system-ui, sans-serif; color: #25352c; background: #f3f1e9; font-synthesis: none; line-height: 1.5; --green: #315745; --border: #dcded2; --paper: #fffef9; }
+:root { font-family: system-ui, sans-serif; color: #25352c; background: #f3f1e9; font-synthesis: none; line-height: 1.5; --green: #315745; --border: #dcded2; --paper: #fffef9; --domain-event-color: #866639; }
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 320px; }
 button, input, select, textarea { font: inherit; color: inherit; }
@@ -172,7 +172,8 @@ dialog:has(.migration-grid) { width: min(900px, 94vw); }
   .printable-grid .weekday { white-space: normal; overflow-wrap: anywhere; }
   .cell.selected { box-shadow: none; }
   .cell-heading .current-day { color: black; background: transparent; font-weight: bold; }
-  .moon-disc { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  .printed-event-color { border-inline-start: 1mm solid; padding-inline-start: 1.5mm; }
+  .moon-disc, .colored-event, .domain-event { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
   .cell-heading .moon-disc { width: 8pt; height: 8pt; }
   .moon-legend { break-after: avoid; font-size: 8pt; }
   .event-chip { font-size: 8pt; }
@@ -204,7 +205,7 @@ dialog:has(.migration-grid) { width: min(900px, 94vw); }
 .domain-holding details { margin-top: .65rem; }
 .domain-holding ul { margin: .35rem 0 0; padding-left: 1.25rem; }
 .domain-notes { white-space: pre-wrap; }
-.domain-event { border-left-color: #866639; }
+.domain-event { border-left-color: var(--domain-event-color); }
 .ledger { width: 100%; border-collapse: collapse; }
 .ledger :is(th, td) { padding: .4rem .6rem; text-align: right; border-bottom: 1px solid var(--border); }
 .ledger th:first-child { text-align: left; }

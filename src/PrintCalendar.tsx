@@ -84,7 +84,7 @@ function PrintSectionBody({ calendar, section, events, renderMoons }: {
       const date = Math.max(from, dayOf(event.start))
       return <div className="agenda-row" key={event.key}>
         <div><time>{dateLabel(calendar, date)}</time>{from + 1 !== to && renderMoons?.(date)}</div>
-        <div>{event.title}{(event.time || event.location) && <p>{[event.time, event.location].filter(Boolean).join(' · ')}</p>}</div>
+        <div className={event.color ? 'printed-event-color colored-event' : undefined} style={{ borderInlineStartColor: event.color }}>{event.title}{(event.time || event.location) && <p>{[event.time, event.location].filter(Boolean).join(' · ')}</p>}</div>
       </div>
     }) : <p>No events in this date range.</p>}
   </div>
@@ -103,7 +103,7 @@ function PrintSectionBody({ calendar, section, events, renderMoons }: {
         return <div className="cell" key={day}>
           <div className="cell-heading"><strong>{dateParts(calendar, day).day}</strong>{renderMoons?.(day)}</div>
           {events.filter(event => event.start < (day + 1) * minutes && event.end > day * minutes).map(event =>
-            <div className="event-chip" key={event.key}><span>{event.time && event.kind === 'timed' && `${event.time} `}{event.title}</span></div>
+            <div className={event.color ? 'event-chip printed-event-color colored-event' : 'event-chip'} style={{ borderInlineStartColor: event.color }} key={event.key}><span>{event.time && event.kind === 'timed' && `${event.time} `}{event.title}</span></div>
           )}
         </div>
       })}</div>

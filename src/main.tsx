@@ -203,20 +203,20 @@ function App() {
   const selectedEvents = occurrences(cal, campaign.events, selected, selected + 1)
   const navigate = (direction: number) => setSelected(view === 'Month' ? movePeriod(cal, selected, direction) : selected + direction * (view === 'Week' ? weekLength : view === 'Agenda' ? 30 : 1))
   const timeLabel = (event: Occurrence) => event.allDay ? 'All day' : `${String(Math.floor(mod(event.start, minutes) / 60)).padStart(2, '0')}:${String(mod(event.start, 60)).padStart(2, '0')}`
-  const eventButton = (event: Occurrence, day: number, compact = false) => <button key={`${event.series.id}:${event.original}`} className={compact ? 'event-chip' : 'event-item'} style={{ borderLeftColor: event.color }} onClick={() => openEvent(event, day)}>
+  const eventButton = (event: Occurrence, day: number, compact = false) => <button key={`${event.series.id}:${event.original}`} className={compact ? 'event-chip colored-event' : 'event-item colored-event'} style={{ borderLeftColor: event.color }} onClick={() => openEvent(event, day)}>
     <span>{!event.allDay && compact && <small>{timeLabel(event)} </small>}{event.title}</span>
     {!compact && <small>{timeLabel(event)}{event.location && ` · ${event.location}`}</small>}
   </button>
   function calendarEntries(events: Occurrence[], start: number, end: number, term?: string) {
     const entries: (PrintEntry & { render: (day: number, compact?: boolean) => ReactNode })[] = events.map(event => ({
       key: `${event.series.id}:${event.original}`, start: event.start, end: event.end,
-      title: event.title, kind: event.allDay ? 'all-day' : 'timed', time: timeLabel(event), location: event.location,
+      title: event.title, kind: event.allDay ? 'all-day' : 'timed', time: timeLabel(event), location: event.location, color: event.color,
       render: (day: number, compact = false) => eventButton(event, day, compact),
     }))
     for (const entry of turnEntries(cal, campaign.holdings ?? [], start, end, term)) {
       const entryKey = `turn:${entry.holdingId}:${entry.month.year}:${entry.month.period}`
       entries.push({
-        key: entryKey, title: entry.title, kind: 'turn', start: entry.day * minutes, end: (entry.day + 1) * minutes,
+        key: entryKey, title: entry.title, kind: 'turn', color: 'var(--domain-event-color)', start: entry.day * minutes, end: (entry.day + 1) * minutes,
         render: (_, compact = false) => <button key={entryKey} className={compact ? 'event-chip domain-event' : 'event-item domain-event'} onClick={() => {
           setEngagementOrigin(undefined)
           setConfidenceReview(undefined)
@@ -230,7 +230,7 @@ function App() {
     }
     for (const entry of dominionEntries(campaign.holdings ?? [], start, end, term)) {
       const entryKey = `dominion:${entry.holdingId}:${entry.id}`
-      entries.push({ key: entryKey, title: entry.title, kind: 'dominion', start: entry.day * minutes, end: (entry.day + 1) * minutes,
+      entries.push({ key: entryKey, title: entry.title, kind: 'dominion', color: 'var(--domain-event-color)', start: entry.day * minutes, end: (entry.day + 1) * minutes,
         render: (_, compact = false) => <button key={entryKey} className={compact ? 'event-chip domain-event' : 'event-item domain-event'} onClick={() => {
           setEngagementOrigin(undefined)
           setConfidenceReview(undefined)
@@ -244,7 +244,7 @@ function App() {
     }
     for (const entry of constructionEntries(cal, campaign.holdings ?? [], start, end, term)) {
       const entryKey = `construction:${entry.holdingId}:${entry.projectId}:${entry.id}`
-      entries.push({ key: entryKey, title: entry.title, kind: 'construction', start: entry.day * minutes, end: (entry.day + 1) * minutes,
+      entries.push({ key: entryKey, title: entry.title, kind: 'construction', color: 'var(--domain-event-color)', start: entry.day * minutes, end: (entry.day + 1) * minutes,
         render: (_, compact = false) => <button key={entryKey} className={compact ? 'event-chip domain-event' : 'event-item domain-event'} onClick={() => {
           setEngagementOrigin(undefined)
           setConfidenceReview(undefined)
@@ -258,7 +258,7 @@ function App() {
     }
     for (const entry of militaryEntries(campaign.holdings ?? [], start, end, term)) {
       const key = `military:${entry.holdingId}:${entry.id}`
-      entries.push({ key, title: entry.title, kind: 'military', start: entry.day * minutes, end: (entry.day + 1) * minutes,
+      entries.push({ key, title: entry.title, kind: 'military', color: 'var(--domain-event-color)', start: entry.day * minutes, end: (entry.day + 1) * minutes,
         render: (_, compact = false) => <button key={key} className={compact ? 'event-chip domain-event' : 'event-item domain-event'} onClick={() => {
           open('domains')
           setMilitaryEntry(entry)
@@ -267,7 +267,7 @@ function App() {
     }
     for (const entry of engagementEntries(campaign.engagements ?? [], start, end, term)) {
       const key = `engagement:${entry.key}`
-      entries.push({ key, title: entry.title, kind: 'engagement', start: entry.day * minutes, end: (entry.day + 1) * minutes, location: entry.location,
+      entries.push({ key, title: entry.title, kind: 'engagement', color: 'var(--domain-event-color)', start: entry.day * minutes, end: (entry.day + 1) * minutes, location: entry.location,
         render: (_, compact = false) => <button key={key} className={compact ? 'event-chip domain-event' : 'event-item domain-event'}
           onClick={() => openEngagement(entry.engagementId)}><span>{entry.title}</span></button>,
       })
