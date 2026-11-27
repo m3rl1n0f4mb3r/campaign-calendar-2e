@@ -1,5 +1,5 @@
 import { useDialogDraft, useDialogLeave } from './Dialog'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { dateLabel, displayYear } from './calendar'
 import { closingDay, dueMonth, formatGp, monthAt, territoryPopulation, previewTurn, recordTurn, reopenTurn, resourceRates, sameMonth, territoriesFor, territoryDefaults, replayInputs, turnEstimates, paymentLabels, availableEffects,
   type Holding, type LedgerLine, type Payment, type PaymentKind, type Receipt, type Territory, type TerritoryTurn, type TurnInputs, type TurnMonth } from './domain'
@@ -20,6 +20,7 @@ type Props = {
   dominionEvent?: { holdingId: string; id: string }
   militaryEntry?: { holdingId: string; unitId: string; day: number; correction?: string }
   confidenceReview?: InitialConfidenceCheck & { holdingId: string }
+  returnToSource?: { label: string; action: () => void }
   openEngagements: (holdingId: string) => void
   constructionProject?: { holdingId: string; projectId: string }
   save: (holdings: Holding[]) => Promise<boolean>
@@ -185,7 +186,7 @@ function Ledger({ turn }: { turn: Receipt }) {
   </table></div>
 }
 
-export function DomainPanel({ campaign, revision, receipt, dominionEvent, constructionProject, militaryEntry, confidenceReview, openEngagements, save, backup, help }: Props) {
+export function DomainPanel({ campaign, revision, receipt, dominionEvent, constructionProject, militaryEntry, confidenceReview, returnToSource, openEngagements, save, backup, help }: Props) {
   const [screen, setScreen] = useState<Screen | undefined>(receipt ? { type: 'receipt', link: receipt } : dominionEvent ? { type: 'confidence', id: dominionEvent.holdingId, selectedEvent: dominionEvent.id }
     : constructionProject ? { type: 'construction', id: constructionProject.holdingId, selectedProject: constructionProject.projectId,
       projects: campaign.holdings?.find(item => item.id === constructionProject.holdingId)?.projects ?? [], revision }
@@ -193,6 +194,9 @@ export function DomainPanel({ campaign, revision, receipt, dominionEvent, constr
     : militaryEntry ? { type: 'military', id: militaryEntry.holdingId, selectedUnit: militaryEntry.unitId, day: militaryEntry.day, correction: militaryEntry.correction, revision,
       draft: campaign.holdings?.find(item => item.id === militaryEntry.holdingId)?.military ?? emptyMilitary() }
     : undefined)
+  const [showArchived, setShowArchived] = useState(false)
+  const [returnScreen, setReturnScreen] = useState<{ screen: Screen; label: string }>()
+  const [resumeAfterSave, setResumeAfterSave] = useState<{ sourceRevision: Props['revision']; destination: Screen }>()
   const [pending, setPending] = useState(false)
   const [error, setError] = useState('')
   const { calendar, current } = campaign
@@ -203,10 +207,37 @@ export function DomainPanel({ campaign, revision, receipt, dominionEvent, constr
     : screen?.type === 'construction' ? JSON.stringify(screen.projects) !== JSON.stringify(draftHolding?.projects ?? [])
       : screen?.type === 'holding' || screen?.type === 'preview' ? JSON.stringify(screen.draft) !== screen.initial ||
         (screen.type === 'preview' && !!screen.projects && JSON.stringify(screen.projects) !== JSON.stringify(draftHolding?.projects ?? []))
-        : screen?.type === 'reopen'
+        : false
   useDialogDraft(!!changed)
   const date = (month: TurnMonth) => dateLabel(calendar, closingDay(calendar, month))
   const go = (next?: Screen) => { setError(''); setScreen(next) }
+  useEffect(() => {
+    if (!resumeAfterSave || resumeAfterSave.sourceRevision === revision) return
+    const { destination } = resumeAfterSave
+    if (destination.type === 'construction' || destination.type === 'military') {
+      const holding = campaign.holdings?.find(item => item.id === destination.id)
+      setScreen(holding ? (destination.type === 'construction' ? { ...destination, projects: holding.projects ?? [], revision }
+        : { ...destination, draft: holding.military ?? emptyMilitary(), revision }) : undefined)
+      if (!holding) setError('The linked holding is no longer available.')
+    } else setScreen(destination)
+    setResumeAfterSave(undefined)
+  }, [resumeAfterSave, revision, campaign.holdings])
+  function cleanSource(source: Screen): Screen {
+    if (source.type === 'construction') return { ...source, projects: holdings.find(item => item.id === source.id)?.projects ?? [], revision }
+    if (source.type === 'military') return { ...source, draft: holdings.find(item => item.id === source.id)?.military ?? emptyMilitary(), revision, correction: undefined }
+    return source
+  }
+  function linkedReceipt(source: Screen, label: string, link: ReceiptLink, reopening = false) {
+    leave(() => {
+      setReturnScreen({ screen: cleanSource(source), label })
+      go(reopening ? { type: 'reopen', link, revision } : { type: 'receipt', link })
+    })
+  }
+  function backAction() {
+    if (returnScreen) { go(cleanSource(returnScreen.screen)); setReturnScreen(undefined) }
+    else if (returnToSource) returnToSource.action()
+    else go()
+  }
   const stale = !!(screen && 'revision' in screen && screen.revision !== revision)
   const persist = async (holding: Holding, next?: Screen) => {
     setPending(true)
@@ -214,10 +245,17 @@ export function DomainPanel({ campaign, revision, receipt, dominionEvent, constr
       const updated = holdings.some(item => item.id === holding.id)
         ? holdings.map(item => item.id === holding.id ? holding : item)
         : [...holdings, holding]
-      if (await save(updated)) go(next)
+      if (await save(updated)) {
+        if (returnScreen) {
+          setResumeAfterSave({ sourceRevision: revision, destination: returnScreen.screen })
+          setReturnScreen(undefined)
+        } else if (returnToSource) returnToSource.action()
+        else go(next)
+      }
     } finally { setPending(false) }
   }
   const startPreview = (holding: Holding) => {
+    if (holding.archived) return
     const month = dueMonth(calendar, holding)
     const draft = replayInputs(holding, month)
     if (draft.military) {
@@ -233,7 +271,7 @@ export function DomainPanel({ campaign, revision, receipt, dominionEvent, constr
     }
     go({ type: 'holding', revision, draft, initial: JSON.stringify(draft) })
   }
-  const back = <button type="button" onClick={() => leave(() => go())}>Back to holdings</button>
+  const back = <button type="button" onClick={() => leave(backAction)}>{returnScreen?.label ?? returnToSource?.label ?? 'Back to holdings'}</button>
 
   if (screen?.type === 'military') {
     const holding = holdings.find(item => item.id === screen.id)
@@ -243,8 +281,8 @@ export function DomainPanel({ campaign, revision, receipt, dominionEvent, constr
       {stale ? <p className="warning" role="alert">Campaign data changed. Return to holdings and reopen the roster.</p>
         : <MilitaryPanel calendar={calendar} clock={current} holding={holding} military={screen.draft} initialDay={screen.day}
           openDecision={(month, posted) => leave(() => {
-            if (posted) go({ type: 'receipt', link: { holdingId: holding.id, month } })
-            else if (sameMonth(dueMonth(calendar, holding), month) && closingDay(calendar, month) <= current) startPreview(holding)
+            if (posted) { setReturnScreen({ screen: cleanSource(screen), label: 'Back to garrison roster' }); go({ type: 'receipt', link: { holdingId: holding.id, month } }) }
+            else if (!holding.archived && sameMonth(dueMonth(calendar, holding), month) && closingDay(calendar, month) <= current) { setReturnScreen({ screen: cleanSource(screen), label: 'Back to garrison roster' }); startPreview(holding) }
             else { go(); setError(`Replay earlier turns before adjusting the supply decision for ${date(month)}.`) }
           })}
           selectedUnit={screen.selectedUnit} correction={screen.correction} change={draft => setScreen({ ...screen, draft })} help={() => help('military-expenses')}/>}
@@ -262,11 +300,8 @@ export function DomainPanel({ campaign, revision, receipt, dominionEvent, constr
       {stale ? <p className="warning" role="alert">Campaign data changed. Return to holdings and reopen construction.</p> : <>
         <ConstructionPanel calendar={calendar} clock={current} holding={holding} projects={screen.projects}
           selectedProject={screen.selectedProject} change={projects => setScreen({ ...screen, projects })}
-          help={() => help('track-construction')} backup={backup} openReceipt={month => {
-            if (!changed || window.confirm('Leave this project view and discard unsaved construction changes?')) {
-              go({ type: 'receipt', link: { holdingId: holding.id, month } })
-            }
-          }}/>
+          help={() => help('track-construction')} backup={backup}
+          openReceipt={(month, selectedProject) => linkedReceipt({ ...screen, selectedProject }, 'Back to construction project', { holdingId: holding.id, month })}/>
       </>}
       <div className="actions">{back}<button className="primary" disabled={pending || stale || !changed}
         onClick={() => void persist({ ...holding, projects: screen.projects })}>Save construction changes</button></div>
@@ -277,10 +312,14 @@ export function DomainPanel({ campaign, revision, receipt, dominionEvent, constr
     const holding = holdings.find(item => item.id === screen.id)
     if (!holding) return <div className="form"><p>This holding is no longer available.</p>{back}</div>
     return <ConfidencePanel calendar={calendar} clock={current} holding={holding} revision={revision}
-      selectedEvent={screen.selectedEvent} initialCheck={screen.initialCheck} help={() => help('resolve-a-disaster')} back={() => go()}
-      openReceipt={month => go({ type: 'receipt', link: { holdingId: holding.id, month } })}
-      reopen={month => go({ type: 'reopen', link: { holdingId: holding.id, month }, revision })}
-      save={next => save(holdings.map(item => item.id === next.id ? next : item))}/>
+      selectedEvent={screen.selectedEvent} initialCheck={screen.initialCheck} help={() => help('resolve-a-disaster')} back={() => leave(backAction)} backLabel={returnToSource?.label}
+      openReceipt={month => linkedReceipt(screen, 'Back to confidence and events', { holdingId: holding.id, month })}
+      reopen={month => linkedReceipt(screen, 'Back to confidence and events', { holdingId: holding.id, month }, true)}
+      save={async next => {
+        const saved = await save(holdings.map(item => item.id === next.id ? next : item))
+        if (saved && returnToSource) returnToSource.action()
+        return saved
+      }}/>
   }
 
   if (screen?.type === 'holding') {
@@ -367,7 +406,8 @@ export function DomainPanel({ campaign, revision, receipt, dominionEvent, constr
     }
     let result: Receipt | undefined
     let invalid = ''
-    if (!stale) {
+    if (holding.archived) invalid = 'Unarchive this holding before recording a turn.'
+    else if (!stale) {
       try {
         const military = validateMilitaryTurn(calendar, holding, month, draft.military)
         result = previewTurn(holding, month, { ...draft, military })
@@ -378,16 +418,18 @@ export function DomainPanel({ campaign, revision, receipt, dominionEvent, constr
       change({ adjustments: [...draft.adjustments, { name, balance, amount: -0 }] })
     return <form className="form" onSubmit={e => {
       e.preventDefault()
-      if (!result || stale || pending) return
+      if (!result || stale || pending || holding.archived) return
       try {
         const updated = recordTurn(calendar, current, holding, month, draft)
         void persist(updated, { type: 'receipt', link: { holdingId: holding.id, month } })
       } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not record the turn.') }
     }}>
-      <div className="guide-context"><h3>{holding.name}{!stale && ` · ${date(month)}`}</h3>
+      <div className="guide-context"><h3>{holding.name} · {replay ? 'Replay turn' : 'Turn preview'}{!stale && ` · ${date(month)}`}</h3>
         <button type="button" onClick={() => help('close-a-turn')}>Help closing a turn</button></div>
       {stale ? <div className="warning" role="alert">This preview is stale. Refresh to use the latest ledger and campaign date.</div> : <>
-        <button type="button" onClick={() => setScreen({ ...screen, draft: territoryDefaults(holding), reset: true })}>Reset to current defaults</button>
+        <button type="button" onClick={() => leave(() => setScreen({ ...screen, draft: territoryDefaults(holding), reset: true }))}>Reset to current defaults</button>
+        <section className="form workflow-section">
+        <h4>Population and income</h4>
         <Rates values={draft} change={change}/>
         {draft.territories ? <>
           {(historicalOnly.length > 0 || currentOnly.length > 0 || changedSetup.length > 0) && saved && <div className="warning">
@@ -405,6 +447,9 @@ export function DomainPanel({ campaign, revision, receipt, dominionEvent, constr
           <Money label="Total resource value override (gp)" optional value={draft.override} change={override => change({ override })}/>
           <Money label="Resource value realized in cash (gp)" value={draft.realized} change={realized => change({ realized: realized ?? 0 })}/>
         </div>
+        </section>
+        <section className="form workflow-section">
+        <h4>Expenses and obligations</h4>
         <fieldset><legend>Expenses and adjustments</legend>
           {draft.adjustments.map((line, index) => {
             const update = (patch: Partial<LedgerLine>) => change({ adjustments: draft.adjustments.map((item, i) => i === index ? { ...item, ...patch } : item) })
@@ -456,12 +501,17 @@ export function DomainPanel({ campaign, revision, receipt, dominionEvent, constr
           <label className="check"><input type="checkbox" checked={draft.xp.approved} disabled={!estimates?.xp}
             onChange={e => change({ xp: { ...draft.xp!, approved: e.target.checked } })}/> Approve XP award</label>
         </fieldset>}
+        </section>
+        <section className="form workflow-section">
+        <h4>Ledger and record turn</h4>
         <label>Turn notes<textarea value={draft.notes} onChange={e => change({ notes: e.target.value })}/></label>
         {result ? <Ledger turn={result}/> : <p role="alert" className="warning">{invalid}</p>}
+        {error && <p role="alert" className="error">{error}</p>}
+        <div className="actions">{back}<button className="primary" disabled={pending || !result}>Record turn</button></div>
+        </section>
       </>}
-      {error && <p role="alert" className="error">{error}</p>}
-      <div className="actions">{back}{stale ? <button type="button" onClick={() => closingDay(calendar, dueMonth(calendar, holding)) <= current ? startPreview(holding) : go()}>Refresh preview</button>
-        : <button className="primary" disabled={pending || !result}>Record turn</button>}</div>
+      {stale && <div className="actions">{back}<button type="button" onClick={() => leave(() =>
+        closingDay(calendar, dueMonth(calendar, holding)) <= current && !holding.archived ? startPreview(holding) : go())}>Refresh preview</button></div>}
     </form>
   }
 
@@ -481,7 +531,7 @@ export function DomainPanel({ campaign, revision, receipt, dominionEvent, constr
         <p>Restored balances: {formatGp(restored.cash)} cash · {formatGp(restored.noncash)} noncash.</p>
         <p>Next turn closes {date(dueMonth(calendar, next))}.</p>
         {stale && <p className="warning" role="alert">This review is stale. Return to the receipt to review the latest ledger.</p>}
-        <div className="actions"><button onClick={() => go({ type: 'receipt', link: screen.link })}>Back to receipt</button><button onClick={backup}>Download backup</button>
+        <div className="actions"><button onClick={() => leave(() => go({ type: 'receipt', link: screen.link }))}>Back to receipt</button><button onClick={backup}>Download backup</button>
           <button className="danger" disabled={pending || stale} onClick={() => void persist(next)}>Confirm reopen</button></div>
       </div>
     }
@@ -518,7 +568,9 @@ export function DomainPanel({ campaign, revision, receipt, dominionEvent, constr
   return <div className="form">
     <div className="actions"><button className="primary" onClick={() => startHolding()}>Add holding</button></div>
     {holdings.length === 0 && <p>No holdings in this campaign.</p>}
-    {holdings.map(holding => {
+    {holdings.some(holding => holding.archived) && <label className="check"><input type="checkbox" checked={showArchived}
+      onChange={e => setShowArchived(e.target.checked)}/> Show archived holdings</label>}
+    {holdings.filter(holding => showArchived || !holding.archived).map(holding => {
       const next = dueMonth(calendar, holding)
       const balance = holding.turns.at(-1)?.closing ?? holding.opening
       const xpTotals = new Map<string, bigint>()
@@ -526,17 +578,22 @@ export function DomainPanel({ campaign, revision, receipt, dominionEvent, constr
         if (xpAward) xpTotals.set(xpAward.recipient, (xpTotals.get(xpAward.recipient) ?? 0n) + BigInt(xpAward.amount))
       }
       return <section className="domain-holding" key={holding.id}>
-        <h3>{holding.name}</h3>
+        <h3>{holding.name}{holding.archived && ' · Archived'}</h3>
         <p>{territoriesFor(holding).length} {territoriesFor(holding).length === 1 ? 'territory' : 'territories'} · {holding.families} families</p>
         <p>{formatGp(balance.cash)} cash · {formatGp(balance.noncash)} noncash</p>
-        <p>Next turn closes {date(next)}.</p>
+        <p>{holding.archived ? 'Turn posting paused. Next unresolved turn' : 'Next turn closes'} {date(next)}.</p>
         <div className="button-group">
           <button onClick={() => startHolding(holding)}>Edit holding</button>
+          <button disabled={pending} onClick={() => {
+            if (holding.archived || window.confirm(`Archive “${holding.name}”? Turn posting will pause. Receipts and pending charges stay available.`)) {
+              void persist({ ...holding, archived: !holding.archived })
+            }
+          }}>{holding.archived ? 'Unarchive holding' : 'Archive holding'}</button>
           <button onClick={() => go({ type: 'construction', id: holding.id, projects: holding.projects ?? [], revision })}>Construction projects</button>
           <button onClick={() => openEngagements(holding.id)}>Battles and sieges</button>
           <button onClick={() => go({ type: 'military', id: holding.id, draft: holding.military ?? emptyMilitary(), revision })}>Garrison roster</button>
           <button onClick={() => go({ type: 'confidence', id: holding.id })}>Confidence and events</button>
-          <button disabled={closingDay(calendar, next) > current} onClick={() => startPreview(holding)}>Preview turn</button>
+          <button disabled={holding.archived || closingDay(calendar, next) > current} onClick={() => startPreview(holding)}>Preview turn</button>
         </div>
         {holding.turns.length > 0 && <details><summary>Turn history</summary>
           {[...xpTotals].map(([ruler, total]) => <p key={ruler}>{ruler} · {total.toLocaleString()} XP recorded for this holding</p>)}

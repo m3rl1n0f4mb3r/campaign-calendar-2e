@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { dateIndex, type Calendar } from './calendar'
-import { closingDay, monthAt, recordTurn, reopenTurn, replayInputs, territoryDefaults, type Holding, type TurnMonth } from './domain'
+import { closingDay, dueMonth, monthAt, recordTurn, reopenTurn, replayInputs, territoryDefaults, type Holding, type TurnMonth } from './domain'
 import { militaryCharges, militaryConflicts, militaryEntries, militaryReceiptChanged, rosterHistory, type ChargeDecision, type Unit } from './military'
 import { migrate } from './migration'
 import { greyhawk } from './presets'
@@ -89,6 +89,19 @@ describe('garrison rosters and military expenses', () => {
     const restored = parseCampaignBackup(exportCampaign({ ...campaign, holdings: [booked] }))
     expect(restored.holdings?.[0].military).toEqual(booked.military)
     expect(restored.holdings?.[0].turns.at(-1)?.inputs.military).toEqual(booked.turns.at(-1)?.inputs.military)
+  })
+
+  it('preserves pending expenses when holding turn posting is paused and resumed', () => {
+    const holding = makeHolding([company])
+    const charge = militaryCharges(cal, holding, first)[0]
+    const deferred = post(holding, first, [{ charge, action: 'defer', amount: 1_500 }])
+    const archived = { ...deferred, archived: true }
+    expect(() => post(archived, second)).toThrow('Unarchive this holding')
+    const restored = parseCampaignBackup(exportCampaign({ ...newCampaign('Riverwatch', cal), holdings: [archived] })).holdings![0]
+    expect(restored.archived).toBe(true)
+    const active = { ...restored, archived: false }
+    expect(dueMonth(cal, active)).toEqual(second)
+    expect(militaryCharges(cal, active, second)[0]).toMatchObject({ id: charge.id, carried: true, amount: 1_500 })
   })
 
   it('flags new payroll after backdated changes and previews migrated military dates', () => {

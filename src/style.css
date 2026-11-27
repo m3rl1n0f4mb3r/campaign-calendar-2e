@@ -187,7 +187,20 @@ dialog:has(.migration-grid) { width: min(900px, 94vw); }
 
 .domain-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .5rem; }
 .domain-line { align-items: end; padding: .5rem 0; border-bottom: 1px solid var(--border); margin-bottom: .5rem; }
-.domain-holding { border: 1px solid var(--border); border-radius: 8px; padding: .8rem; }
+.domain-dialog { width: min(820px, 94vw); }
+.workflow-section {
+  background: #f1f3eb;
+  border: 1px solid #b8c3b7;
+  border-radius: 10px;
+  padding: clamp(.65rem, 2vw, 1.1rem);
+  margin-block: .2rem;
+}
+.workflow-section > h4 { margin: 0; font-size: 1.05rem; }
+.domain-dialog .workflow-section fieldset { border-color: #cad3c6; }
+.workflow-status { display: inline-block; padding: .1rem .45rem; border-radius: .35rem; background: #e2ebdf; color: #274833; font-size: .85rem; }
+.workflow-status-pending { background: #fff0cb; color: #664714; }
+.domain-holding { background: #f7f8f2; border: 1px solid var(--border); border-radius: 8px; padding: .8rem; }
+.domain-holding .domain-holding { background: var(--paper); }
 .domain-holding details { margin-top: .65rem; }
 .domain-holding ul { margin: .35rem 0 0; padding-left: 1.25rem; }
 .domain-notes { white-space: pre-wrap; }

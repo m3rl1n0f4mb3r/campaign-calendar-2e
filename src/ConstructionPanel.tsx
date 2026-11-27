@@ -12,7 +12,7 @@ import {
 
 type Props = {
   calendar: Calendar; clock: number; holding: Holding; projects: Project[]; change: (projects: Project[]) => void
-  month?: TurnMonth; selectedProject?: string; help: () => void; backup: () => void; openReceipt?: (month: TurnMonth) => void
+  month?: TurnMonth; selectedProject?: string; help: () => void; backup: () => void; openReceipt?: (month: TurnMonth, projectId: string) => void
 }
 
 const workDays = (units: number) => `${units / 2} work days`
@@ -62,7 +62,7 @@ export function ConstructionPanel({ calendar, clock, holding, projects, change, 
       <ProjectSummary calendar={calendar} clock={clock} holding={holding} project={project}/>
       {!month && <EstimateHistory snapshots={project.estimates} calendar={calendar}/>}
       {expanded === project.id && <ProjectWork calendar={calendar} clock={clock} holding={holding} project={project}
-        month={month} update={update} backup={backup} openReceipt={openReceipt}/>}
+        month={month} update={update} backup={backup} openReceipt={openReceipt && (month => openReceipt(month, project.id))}/>}
     </section>)}
   </fieldset>
 }

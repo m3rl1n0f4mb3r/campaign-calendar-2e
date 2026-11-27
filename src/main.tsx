@@ -57,6 +57,7 @@ function App() {
   const [view, setView] = useState<View>('Month')
   const [panel, setPanel] = useState<Panel>()
   const [militaryEntry, setMilitaryEntry] = useState<{ holdingId: string; unitId: string; day: number; correction?: string }>()
+  const [engagementOrigin, setEngagementOrigin] = useState<{ id: string; holdingId?: string }>()
   const [engagementSelection, setEngagementSelection] = useState<{ id?: string; holdingId?: string }>()
   const [confidenceReview, setConfidenceReview] = useState<Extract<EngagementLink, { kind: 'confidence' }>>()
   const [constructionProject, setConstructionProject] = useState<{ holdingId: string; projectId: string }>()
@@ -142,7 +143,7 @@ function App() {
   function open(next: Panel) {
     setPanel(next)
     setDraftDate(next === 'clock' ? campaign.current : selected)
-    if (next === 'domains') { setReceipt(undefined); setDominionEvent(undefined); setConstructionProject(undefined); setMilitaryEntry(undefined); setConfidenceReview(undefined) }
+    if (next === 'domains') { setReceipt(undefined); setDominionEvent(undefined); setConstructionProject(undefined); setMilitaryEntry(undefined); setConfidenceReview(undefined); setEngagementOrigin(undefined) }
     if (next === 'new') { setCampaignName(''); setPreset('generic') }
     if (next === 'search') { setSearchFrom(selected); setSearchTo(selected + 29) }
   }
@@ -150,8 +151,9 @@ function App() {
     setEngagementSelection({ id, holdingId })
     open('engagements')
   }
-  function openEngagementLink(link: EngagementLink) {
+  function openEngagementLink(link: EngagementLink, id: string, holdingId?: string) {
     open('domains')
+    setEngagementOrigin({ id, holdingId })
     switch (link.kind) {
       case 'troops': setMilitaryEntry(link); break
       case 'repair': setConstructionProject(link); break
@@ -214,6 +216,7 @@ function App() {
       entries.push({
         key: entryKey, title: entry.title, kind: 'turn', start: entry.day * minutes, end: (entry.day + 1) * minutes,
         render: (_, compact = false) => <button key={entryKey} className={compact ? 'event-chip domain-event' : 'event-item domain-event'} onClick={() => {
+          setEngagementOrigin(undefined)
           setConfidenceReview(undefined)
           setMilitaryEntry(undefined)
           setConstructionProject(undefined)
@@ -227,6 +230,7 @@ function App() {
       const entryKey = `dominion:${entry.holdingId}:${entry.id}`
       entries.push({ key: entryKey, title: entry.title, kind: 'dominion', start: entry.day * minutes, end: (entry.day + 1) * minutes,
         render: (_, compact = false) => <button key={entryKey} className={compact ? 'event-chip domain-event' : 'event-item domain-event'} onClick={() => {
+          setEngagementOrigin(undefined)
           setConfidenceReview(undefined)
           setMilitaryEntry(undefined)
           setReceipt(undefined)
@@ -240,6 +244,7 @@ function App() {
       const entryKey = `construction:${entry.holdingId}:${entry.projectId}:${entry.id}`
       entries.push({ key: entryKey, title: entry.title, kind: 'construction', start: entry.day * minutes, end: (entry.day + 1) * minutes,
         render: (_, compact = false) => <button key={entryKey} className={compact ? 'event-chip domain-event' : 'event-item domain-event'} onClick={() => {
+          setEngagementOrigin(undefined)
           setConfidenceReview(undefined)
           setMilitaryEntry(undefined)
           setReceipt(undefined)
@@ -387,7 +392,7 @@ function App() {
         <section><h3>Events</h3>{selectedEntries.length ? selectedEntries.map(entry => entry.render(selected)) : <p className="muted">No events on this date.</p>}</section>
       </aside>
     </main>
-    {panel && <Dialog key={panel} title={dialogTitle[panel]} close={close} saving={saving}
+    {panel && <Dialog key={panel} className={['domains', 'engagements', 'estimates'].includes(panel) ? 'domain-dialog' : undefined} title={dialogTitle[panel]} close={close} saving={saving}
       dirty={panel === 'new' ? !!campaignName || preset !== 'generic' : panel === 'data' ? !!restore : panel === 'clock' && draftDate !== campaign.current}>
       {error && <p role="alert" className="error">{error}</p>}
       {panel === 'print' && <PrintCalendar calendar={cal} campaignName={campaign.name} current={campaign.current}
@@ -398,8 +403,10 @@ function App() {
         entries={(start, end, query) => calendarEntries(occurrences(cal, campaign.events, start, end, query), start, end, query)}/>}
       {panel === 'estimates' && <EstimatePanel campaign={campaign} save={saveCampaign} help={() => openGuide('estimate-construction')}/>}
       {panel === 'engagements' && <EngagementPanel campaign={campaign} revision={raw} selected={selected} initialId={engagementSelection?.id}
-        initialHolding={engagementSelection?.holdingId} save={saveCampaign} openLink={openEngagementLink} help={() => openGuide('battle-siege-records')}/>}
-      {panel === 'domains' && <DomainPanel campaign={campaign} revision={raw} receipt={receipt} dominionEvent={dominionEvent} constructionProject={constructionProject} militaryEntry={militaryEntry} confidenceReview={confidenceReview} openEngagements={holdingId => openEngagement(undefined, holdingId)} help={openGuide} backup={backup} save={holdings => saveCampaign({ ...campaign, holdings })}/>}
+        initialHolding={engagementSelection?.holdingId} save={saveCampaign} openLink={openEngagementLink} backToHoldings={engagementSelection?.holdingId ? () => open('domains') : undefined} help={() => openGuide('battle-siege-records')}/>}
+      {panel === 'domains' && <DomainPanel campaign={campaign} revision={raw} receipt={receipt} dominionEvent={dominionEvent} constructionProject={constructionProject} militaryEntry={militaryEntry} confidenceReview={confidenceReview}
+        returnToSource={engagementOrigin ? { label: 'Back to engagement', action: () => openEngagement(engagementOrigin.id, engagementOrigin.holdingId) } : undefined}
+        openEngagements={holdingId => openEngagement(undefined, holdingId)} help={openGuide} backup={backup} save={holdings => saveCampaign({ ...campaign, holdings })}/>}
       {panel === 'event' && <EventEditor calendar={cal} day={selected} event={editing} save={saveEvent} close={close}/>}
       {panel === 'calendar' && <CalendarEditor campaign={campaign} close={close} backup={backup} save={async next => {
         if (await saveCampaign(next)) {

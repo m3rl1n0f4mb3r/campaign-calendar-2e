@@ -13,11 +13,11 @@ export type InitialConfidenceCheck = { id: string; day: number; title: string }
 
 type Props = {
   calendar: Calendar; clock: number; holding: Holding; revision: string | null; selectedEvent?: string; initialCheck?: InitialConfidenceCheck
-  help: () => void
+  help: () => void; backLabel?: string
   save: (holding: Holding) => Promise<boolean>; back: () => void; openReceipt: (month: TurnMonth) => void; reopen: (month: TurnMonth) => void
 }
 
-export function ConfidencePanel({ calendar, clock, holding, revision, selectedEvent, initialCheck, save, back, openReceipt, reopen, help }: Props) {
+export function ConfidencePanel({ calendar, clock, holding, revision, selectedEvent, initialCheck, save, back, backLabel = 'Back to holdings', openReceipt, reopen, help }: Props) {
   const state = holding.confidence ?? initialConfidence()
   const start = dateIndex(calendar, { ...holding.first, day: 1 })
   const due = nextReview(calendar, start, state)
@@ -170,7 +170,7 @@ export function ConfidencePanel({ calendar, clock, holding, revision, selectedEv
 
   if (stale) return <div className="form">
     <p className="warning" role="alert">Campaign data changed. Open the holding again to review the latest records.</p>
-    <button onClick={back}>Back to holdings</button>
+    <button onClick={back}>{backLabel}</button>
   </div>
   const band = confidenceBand(state.current)
   const projected = confidenceBand(clampConfidence(clampConfidence(confidenceAt(state, checkDate) + change) + modifier))
@@ -366,7 +366,7 @@ export function ConfidencePanel({ calendar, clock, holding, revision, selectedEv
         return <p key={effect.id}>{effect.title} · {formatGp(effect.amount)} · {dateLabel(calendar, closingDay(calendar, effect.target))} · {posted ? 'Posted' : 'Available in turn preview'}</p>
       })}
     </fieldset>
-    <button onClick={back}>Back to holdings</button>
+    <button onClick={back}>{backLabel}</button>
   </div>
 }
 

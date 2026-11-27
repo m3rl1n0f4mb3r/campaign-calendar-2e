@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { dateIndex } from './calendar'
 import { newProject } from './construction'
 import { availableEffects, closingDay, recordTurn, reopenTurn, territoryDefaults, type Holding } from './domain'
-import { activeSieges, applyConsequence, correctEngagementExpense, engagementEntries, rosterStrength, saveEngagement, type Engagement } from './engagement'
+import { activeSieges, applyConsequence, correctEngagementExpense, deleteEngagement, engagementEntries, rosterStrength, saveEngagement, type Engagement } from './engagement'
 import { migrate } from './migration'
 import { greyhawk } from './presets'
 import { exportCampaign, newCampaign, parseCampaignBackup } from './storage'
@@ -67,6 +67,23 @@ describe('battle and siege records', () => {
     expect(migrated.errors).toEqual([])
     expect(migrated.campaign.engagements![0].end).toBe(end + 1)
     expect(parseCampaignBackup(exportCampaign(migrated.campaign)).holdings![0].turns[0].closing.cash).toBe(19_000)
+  })
+
+  it('hides archived engagements from the calendar while retaining links and protects linked records from deletion', () => {
+    const saved = saveEngagement(seed(), siege)
+    expect(deleteEngagement(saved, siege.id).engagements).toEqual([])
+    const proposed = saveEngagement(saved, { ...siege, consequences: [
+      { id: 'loss', kind: 'troops', status: 'proposed', holdingId: 'hold', unitId: 'guard', day: end, strength: 20, delta: -5 },
+    ] })
+    const applied = applyConsequence(proposed, siege.id, 'loss')
+    expect(() => deleteEngagement(applied, siege.id)).toThrow('Archive this engagement')
+    const archived = saveEngagement(applied, { ...applied.engagements![0], archived: true })
+    const restored = parseCampaignBackup(exportCampaign(archived))
+    expect(activeSieges(restored.engagements!, festival)).toEqual([])
+    expect(engagementEntries(restored.engagements!, beforeFestival, end + 1, 'Riverwatch')).toEqual([])
+    expect(rosterStrength(restored.holdings![0], 'guard', end)).toBe(15)
+    const opened = saveEngagement(restored, { ...restored.engagements![0], archived: false })
+    expect(activeSieges(opened.engagements!, festival)).toHaveLength(1)
   })
 
   it('corrects a single one-off expense only after reopening its posted turn', () => {

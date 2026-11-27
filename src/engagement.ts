@@ -22,7 +22,7 @@ const consequence = z.discriminatedUnion('kind', [
 ])
 export const engagementSchema = z.object({
   id, title: name, kind: z.enum(['battle', 'siege']), start: date, end: date.optional(),
-  location: z.string().max(120), holdingId: id.optional(), projectId: id.optional(),
+  archived: z.boolean().optional(), location: z.string().max(120), holdingId: id.optional(), projectId: id.optional(),
   participants: z.array(participant), outcome: z.string(), notes: z.string(), consequences: z.array(consequence),
 }).refine(item => (item.kind === 'siege' || item.end === undefined) && (item.end === undefined || item.end >= item.start) &&
   (!item.projectId || !!item.holdingId) && new Set(item.participants.map(entry => entry.id)).size === item.participants.length &&
@@ -32,7 +32,7 @@ export type EngagementParticipant = z.infer<typeof participant>
 export type Consequence = z.infer<typeof consequence>
 
 export function activeSieges(items: readonly Engagement[], day: number) {
-  return items.filter(item => item.kind === 'siege' && item.start <= day && (item.end === undefined || day <= item.end))
+  return items.filter(item => !item.archived && item.kind === 'siege' && item.start <= day && (item.end === undefined || day <= item.end))
 }
 
 export function involvesHolding(item: Engagement, holdingId: string) {
@@ -43,6 +43,7 @@ export function involvesHolding(item: Engagement, holdingId: string) {
 export function engagementEntries(items: readonly Engagement[], from: number, to: number, query = '') {
   const term = query.trim().toLowerCase()
   return items.flatMap(item => {
+    if (item.archived) return []
     if (term && ![item.title, item.location, item.outcome, item.notes, item.kind,
       ...item.participants.flatMap(person => [person.name, person.side])].some(value => value.toLowerCase().includes(term))) return []
     const entries = [{ key: `${item.id}:start`, day: item.start, title: item.kind === 'battle' ? item.title : `Siege begins · ${item.title}` }]
@@ -67,6 +68,24 @@ export function saveEngagement(campaign: Campaign, draft: Engagement): Campaign 
   const items = campaign.engagements ?? []
   return { ...campaign, engagements: items.some(item => item.id === saved.id)
     ? items.map(item => item.id === saved.id ? saved : item) : [...items, saved] }
+}
+
+export function engagementDeleteBlocker(campaign: Campaign, engagement: Engagement) {
+  const hasApplied = engagement.consequences.some(effect => effect.status === 'applied' ||
+    (effect.kind === 'confidence' && campaign.holdings?.find(holding => holding.id === effect.holdingId)?.confidence?.checks.some(check => check.id === effect.id)))
+  if (hasApplied || campaign.resolutions?.some(item => item.engagementId === engagement.id && item.approval)) {
+    return 'Archive this engagement to keep its applied consequences or approved resolution.'
+  }
+  if (campaign.resolutions?.some(item => item.engagementId === engagement.id)) return 'Discard the linked quick-resolution draft before deleting this engagement.'
+}
+
+export function deleteEngagement(campaign: Campaign, id: string): Campaign {
+  const items = campaign.engagements ?? []
+  const item = items.find(entry => entry.id === id)
+  if (!item) throw new Error('This engagement is no longer available.')
+  const blocker = engagementDeleteBlocker(campaign, item)
+  if (blocker) throw new Error(blocker)
+  return { ...campaign, engagements: items.filter(entry => entry.id !== id) }
 }
 
 export function replaceConsequence(item: Engagement, draft: Consequence): Engagement {

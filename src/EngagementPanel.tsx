@@ -4,7 +4,7 @@ import { dateLabel } from './calendar'
 import { DateField } from './DateField'
 import { closingDay, formatGp, type TurnMonth } from './domain'
 import {
-  applyConsequence, correctEngagementExpense, expenseTarget, involvesHolding, replaceConsequence, rosterStrength, saveEngagement,
+  applyConsequence, correctEngagementExpense, deleteEngagement, engagementDeleteBlocker, expenseTarget, involvesHolding, replaceConsequence, rosterStrength, saveEngagement,
   type Consequence, type Engagement, type EngagementParticipant,
 } from './engagement'
 import type { Campaign } from './storage'
@@ -18,11 +18,12 @@ export type EngagementLink =
   | { kind: 'expense'; holdingId: string; month: TurnMonth }
   | { kind: 'confidence'; holdingId: string; id: string; day: number; title: string }
 
-export function EngagementPanel({ campaign, revision, selected, initialId, initialHolding, save, openLink, help }: {
+export function EngagementPanel({ campaign, revision, selected, initialId, initialHolding, save, openLink, backToHoldings, help }: {
   campaign: Campaign; revision: string | null; selected: number; initialId?: string; initialHolding?: string
-  save: (campaign: Campaign) => Promise<boolean>; openLink: (link: EngagementLink) => void; help: () => void
+  backToHoldings?: () => void; save: (campaign: Campaign) => Promise<boolean>; openLink: (link: EngagementLink, sourceId: string, sourceHolding?: string) => void; help: () => void
 }) {
   const [id, setId] = useState(initialId)
+  const [showArchived, setShowArchived] = useState(false)
   const [quick, setQuick] = useState(false)
   const [draft, setDraft] = useState<Engagement>()
   const [editRevision, setEditRevision] = useState(revision)
@@ -34,6 +35,10 @@ export function EngagementPanel({ campaign, revision, selected, initialId, initi
   const item = items.find(entry => entry.id === id)
   const date = (day: number) => dateLabel(calendar, day)
   const holdings = campaign.holdings ?? []
+  const blocker = item && engagementDeleteBlocker(campaign, item)
+  const follow = (link: EngagementLink) => {
+    if (item) leave(() => openLink(link, item.id, initialHolding))
+  }
   const leave = useDialogLeave()
   useDialogDraft(!!draft && (item ? JSON.stringify(draft) !== JSON.stringify(item) :
     !!(draft.title || draft.notes || draft.outcome || draft.location || draft.participants.length || draft.kind !== 'battle' || draft.start !== selected || draft.holdingId !== initialHolding)))
@@ -55,7 +60,9 @@ export function EngagementPanel({ campaign, revision, selected, initialId, initi
 
   return <div className="form">
     <div className="guide-context"><button type="button" onClick={help}>Help with battles and sieges</button>
+      {(!item && !draft && backToHoldings) && <button type="button" onClick={backToHoldings}>Back to holdings</button>}
       {(item || draft) && <button type="button" onClick={() => leave(() => { setId(undefined); setDraft(undefined); setProposal(undefined); setError('') })}>Back to engagements</button>}</div>
+    {id && !item && <p role="status">This engagement is no longer available.</p>}
     {error && <p className="error" role="alert">{error}</p>}
     {draft ? <form className="form" onSubmit={event => {
       event.preventDefault()
@@ -86,7 +93,7 @@ export function EngagementPanel({ campaign, revision, selected, initialId, initi
       <label>Notes<textarea value={draft.notes} onChange={e => setDraft({ ...draft, notes: e.target.value })}/></label>
       <div className="actions"><button type="button" onClick={() => leave(() => setDraft(undefined))}>Cancel</button><button className="primary" disabled={busy}>Save engagement</button></div>
     </form> : item ? <>
-      <h3>{item.title}</h3>
+      <h3>{item.title}{item.archived && ' · Archived'}</h3>
       <p>{item.kind === 'battle' ? 'Battle' : 'Siege'} · {date(item.start)}{item.kind === 'siege' && (item.end === undefined ? ' · No end date' : ` – ${date(item.end)}`)}
         {item.location && ` · ${item.location}`}</p>
       {item.holdingId && <p>Location holding: {holdings.find(holding => holding.id === item.holdingId)?.name}
@@ -97,6 +104,19 @@ export function EngagementPanel({ campaign, revision, selected, initialId, initi
         {person.before !== undefined && ` · Before ${person.before}`}{person.after !== undefined && ` · After ${person.after}`}</li>)}</ul>}
       <button type="button" onClick={() => setQuick(true)}>Quick resolution</button>
       <button type="button" onClick={() => { setEditRevision(revision); setDraft(item); setProposal(undefined) }}>Edit engagement</button>
+      <div className="button-group">
+        <button type="button" disabled={busy} onClick={() => leave(() => {
+          if (item.archived || window.confirm(`Archive “${item.title}”? It will be hidden from the calendar, search, print, and the active siege list. Linked records stay available.`)) {
+            void commit(() => saveEngagement(campaign, { ...item, archived: !item.archived }), () => { setProposal(undefined) })
+          }
+        })}>{item.archived ? 'Unarchive engagement' : 'Archive engagement'}</button>
+        {!blocker && <button type="button" className="danger" disabled={busy} onClick={() => leave(() => {
+          if (window.confirm(`Delete “${item.title}”? This removes its calendar entries and unapplied proposals.`)) {
+            void commit(() => deleteEngagement(campaign, item.id), () => { setId(undefined); setProposal(undefined) })
+          }
+        })}>Delete engagement</button>}
+      </div>
+      {blocker && <p className="muted">{blocker}</p>}
       <fieldset className="form" disabled={busy}><legend>Consequences</legend>
         {!item.consequences.length && <p>No consequences recorded.</p>}
         {item.consequences.map(effect => {
@@ -131,16 +151,16 @@ export function EngagementPanel({ campaign, revision, selected, initialId, initi
                 <option key={cost.id} value={cost.id}>{cost.title} · {formatGp(-cost.amount)}</option>)}</select>
             </label>}
             {applied && <div className="button-group">
-              {effect.kind === 'troops' && roster && <button type="button" onClick={() => openLink({ kind: 'troops', holdingId: effect.holdingId, unitId: effect.unitId, day: effect.day, correction: effect.id })}>Open roster correction</button>}
-              {effect.kind === 'repair' && effect.projectId && <button type="button" onClick={() => openLink({ kind: 'repair', holdingId: effect.holdingId, projectId: effect.projectId! })}>Open repair project</button>}
-              {check && <button type="button" onClick={() => openLink({ kind: 'confidence', holdingId: effect.holdingId, id: effect.id, day: check.day, title: item.title })}>Open confidence history</button>}
-              {receipt && <button type="button" onClick={() => openLink({ kind: 'expense', holdingId: effect.holdingId, month: receipt.month })}>Open posted receipt</button>}
+              {effect.kind === 'troops' && roster && <button type="button" onClick={() => follow({ kind: 'troops', holdingId: effect.holdingId, unitId: effect.unitId, day: effect.day, correction: effect.id })}>Open roster correction</button>}
+              {effect.kind === 'repair' && effect.projectId && <button type="button" onClick={() => follow({ kind: 'repair', holdingId: effect.holdingId, projectId: effect.projectId! })}>Open repair project</button>}
+              {check && <button type="button" onClick={() => follow({ kind: 'confidence', holdingId: effect.holdingId, id: effect.id, day: check.day, title: item.title })}>Open confidence history</button>}
+              {receipt && <button type="button" onClick={() => follow({ kind: 'expense', holdingId: effect.holdingId, month: receipt.month })}>Open posted receipt</button>}
               {expense && !receipt && <button type="button" onClick={() => { setEditRevision(revision); setProposal(effect) }}>Correct expense</button>}
             </div>}
             {!applied && effect.status === 'proposed' && <div className="button-group">
               <button type="button" onClick={() => { setEditRevision(revision); setProposal(effect) }}>Edit proposal</button>
               {effect.kind === 'confidence' ? <button type="button" disabled={effect.day > current} onClick={() =>
-                openLink({ kind: 'confidence', holdingId: effect.holdingId, id: effect.id, day: effect.day, title: item.title })}>Open confidence review</button>
+                follow({ kind: 'confidence', holdingId: effect.holdingId, id: effect.id, day: effect.day, title: item.title })}>Open confidence review</button>
                 : <button type="button" className="primary" onClick={() => void commit(() => applyConsequence(campaign, item.id, effect.id))}>Approve consequence</button>}
               <button type="button" onClick={() => void commit(() => saveEngagement(campaign, replaceConsequence(item, { ...effect, status: 'declined' })))}>Decline</button>
             </div>}
@@ -157,8 +177,11 @@ export function EngagementPanel({ campaign, revision, selected, initialId, initi
       <button type="button" className="primary" onClick={() => { setEditRevision(revision); setDraft({
         id: crypto.randomUUID(), title: '', kind: 'battle', start: selected, location: '', holdingId: initialHolding, participants: [], outcome: '', notes: '', consequences: [],
       }) }}>New battle or siege</button>
-      {items.filter(entry => !initialHolding || involvesHolding(entry, initialHolding)).sort((a, b) => b.start - a.start).map(entry =>
-        <button key={entry.id} type="button" onClick={() => setId(entry.id)}>{entry.title} · {date(entry.start)}</button>)}
+      {initialHolding && <p>Showing engagements linked to {holdings.find(holding => holding.id === initialHolding)?.name ?? 'this holding'}.</p>}
+      {items.some(entry => entry.archived && (!initialHolding || involvesHolding(entry, initialHolding))) &&
+        <label className="check"><input type="checkbox" checked={showArchived} onChange={e => setShowArchived(e.target.checked)}/> Show archived engagements</label>}
+      {items.filter(entry => (showArchived || !entry.archived) && (!initialHolding || involvesHolding(entry, initialHolding))).sort((a, b) => b.start - a.start).map(entry =>
+        <button key={entry.id} type="button" onClick={() => setId(entry.id)}>{entry.title} · {date(entry.start)}{entry.archived && ' · Archived'}</button>)}
     </>}
   </div>
 }

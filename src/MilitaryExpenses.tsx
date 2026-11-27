@@ -50,7 +50,8 @@ export function MilitaryExpenses({ calendar, holding, month, value, original, ch
       const action = saved?.action ?? (charge.carried ? 'defer' : 'skip')
       const amount = saved ? saved.amount : charge.amount
       return <section className="form domain-holding" key={charge.id}>
-        <strong>{charge.title}{charge.carried && ' · Deferred'}</strong>
+        <strong>{charge.title} {charge.carried && <span className="workflow-status">Deferred</span>}
+          {action !== 'skip' && !amount && <span className="workflow-status workflow-status-pending">Needs an amount</span>}</strong>
         <p>{serviceDates(calendar, charge)}{charge.kind === 'supply' && ` · ${unit?.name ?? 'Holding-wide'}`} · {charge.balance}{charge.amount === undefined ? ' · Enter a GM-approved amount' : ` · ${formatGp(charge.amount)} suggested`}</p>
         {!!charge.basis.length && <ul>{charge.basis.map(({ day, rate }) => <li key={day}>{dateLabel(calendar, day)} · {rate
           ? `${rate[0]} troops · ${formatGp(rate[2])} per ${rate[1]} per month` : 'No pay due'}</li>)}</ul>}

@@ -55,8 +55,8 @@ export function Modal({ title, dismiss, children, className, focusOnOpen, fallba
   </dialog>
 }
 
-export function Dialog({ title, close, dirty = false, saving = false, children }: {
-  title: string; close: () => void; dirty?: boolean; saving?: boolean; children: ReactNode
+export function Dialog({ title, close, dirty = false, saving = false, className, children }: {
+  title: string; close: () => void; dirty?: boolean; saving?: boolean; className?: string; children: ReactNode
 }) {
   const drafts = useRef(new Set<string>())
   const [report] = useState(() => (id: string, dirty: boolean) => {
@@ -70,7 +70,7 @@ export function Dialog({ title, close, dirty = false, saving = false, children }
     else action()
   }
   return <DraftContext.Provider value={{ report, leave }}>
-    <Modal title={title} fallbackFocus dismiss={() => leave(close)}>{children}</Modal>
+    <Modal title={title} className={className} fallbackFocus dismiss={() => leave(close)}>{children}</Modal>
     {discard && <Modal title="Discard changes?" dismiss={() => setDiscard(undefined)} focusOnOpen="[data-keep-editing]">
       <p>You have unsaved changes.</p>
       <div className="actions">
