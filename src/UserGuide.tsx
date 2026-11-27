@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { Modal } from './Dialog'
 
 const topics = {
   'get-started': 'Get started',
@@ -14,27 +14,7 @@ const topics = {
 export type GuideTopic = keyof typeof topics
 
 export function UserGuide({ topic, onClose }: { topic: GuideTopic; onClose: () => void }) {
-  const dialog = useRef<HTMLDialogElement>(null)
-
-  function focusTopic(id: GuideTopic) {
-    const heading = dialog.current?.querySelector<HTMLElement>(`#${id}`)
-    heading?.focus({ preventScroll: true })
-    heading?.scrollIntoView({ block: 'start' })
-  }
-
-  useEffect(() => {
-    const modal = dialog.current
-    if (!modal) return
-    if (!modal.open) modal.showModal()
-    if (topic !== 'get-started') focusTopic(topic)
-    return () => { if (modal.open) modal.close() }
-  }, [topic])
-
-  return <dialog className="guide-dialog" ref={dialog} aria-labelledby="guide-title" onClose={onClose}>
-    <header className="dialog-header">
-      <h2 id="guide-title">User Guide</h2>
-      <button type="button" autoFocus onClick={() => dialog.current?.close()}>Close guide</button>
-    </header>
+  return <Modal title="User Guide" dismiss={onClose} className="guide-dialog" focusOnOpen={`#${topic}`}>
     <section aria-labelledby="get-started" hidden={topic !== 'get-started'}>
       <h3 id="get-started" tabIndex={-1}>{topics['get-started']}</h3>
       <p>Choose <strong>Campaign → New campaign</strong> to start with a calendar template. Select a date on the grid, then select its <strong>+</strong> or use <strong>New event</strong> to schedule something on that date.</p>
@@ -112,5 +92,5 @@ export function UserGuide({ topic, onClose }: { topic: GuideTopic; onClose: () =
         <li>Use <strong>Manage module catalog</strong> to edit or add campaign modules. Use <strong>Remove line</strong> and add the module again to bring an existing draft line up to date. Approved estimates are available under <strong>Approved estimate history</strong> in the project.</li>
       </ol>
     </section>
-  </dialog>
+  </Modal>
 }

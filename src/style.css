@@ -69,7 +69,16 @@ p { margin: .35rem 0; }
 .agenda-row time { color: #536754; font-size: .9rem; }
 dialog { background: var(--paper); color: inherit; border: 1px solid var(--border); border-radius: 14px; width: min(630px, 94vw); max-height: 90vh; padding: 1.25rem; }
 dialog::backdrop { background: #111d17a6; }
-.dialog-header { margin-bottom: 1rem; }
+dialog > .dialog-header {
+  position: sticky;
+  top: -1.25rem;
+  z-index: 2;
+  background: var(--paper);
+  padding-block: .8rem;
+  margin: -.8rem 0 .65rem;
+  border-bottom: 1px solid var(--border);
+}
+dialog { scroll-padding-block-start: 4.5rem; }
 .form { display: grid; gap: .75rem; }
 .form label { display: grid; gap: .25rem; }
 .form .check { display: flex; align-items: center; gap: .35rem; }

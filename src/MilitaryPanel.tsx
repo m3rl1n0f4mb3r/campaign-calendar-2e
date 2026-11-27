@@ -1,19 +1,25 @@
+import { useChangedDraft, useDialogLeave } from './Dialog'
 import { useState } from 'react'
 import { dateLabel, type Calendar } from './calendar'
 import { DateField } from './DateField'
-import { closingDay, dueMonth, formatGp, monthAt, type Holding } from './domain'
+import { closingDay, dueMonth, formatGp, monthAt, type Holding, type TurnMonth } from './domain'
 import { militarySchema, rosterHistory, rosterLabels, validMilitary,
   type Billing, type Military, type RosterChange, type Supply, type Terms, type Unit } from './military'
 
 type Props = {
   calendar: Calendar; clock: number; holding: Holding; military: Military; initialDay?: number; selectedUnit?: string; correction?: string
+  openDecision: (month: TurnMonth, posted: boolean) => void
   change: (value: Military) => void; help: () => void
 }
 const defaultTerms: Terms = { service: 'unpaid', rateType: 'unit', rate: 0 }
 
-export function MilitaryPanel({ calendar, clock, holding, military, initialDay, selectedUnit, correction, change, help }: Props) {
+export function MilitaryPanel({ calendar, clock, holding, military, initialDay, selectedUnit, correction, change, help, openDecision }: Props) {
   const [day, setDay] = useState(initialDay ?? clock)
   const [edit, setEdit] = useState<'muster' | 'supply' | Unit | undefined>(() => correction ? military.units.find(unit => unit.id === selectedUnit) : undefined)
+  const [details, setDetails] = useState<Unit>()
+  const [editingSupply, setEditingSupply] = useState<Supply>()
+  const leave = useDialogLeave()
+  useChangedDraft(details, military.units.find(item => item.id === details?.id))
   const [error, setError] = useState('')
   const [showArchived, setShowArchived] = useState(!!selectedUnit)
   const date = (value: number) => dateLabel(calendar, value)
@@ -23,6 +29,7 @@ export function MilitaryPanel({ calendar, clock, holding, military, initialDay, 
       if (!validMilitary(next)) throw new Error('Check the unit history and supply records.')
       change(next)
       setEdit(undefined)
+      setDetails(undefined)
       setError('')
     } catch (cause) {
       setError(cause instanceof Error && cause.name !== 'ZodError' ? cause.message : 'Enter valid roster or supply information.')
@@ -34,16 +41,18 @@ export function MilitaryPanel({ calendar, clock, holding, military, initialDay, 
     <DateField calendar={calendar} value={day} onChange={setDay} label="Roster date"/>
     <div className="button-group">
       <button type="button" onClick={() => { setEdit('muster'); setError('') }}>Muster unit</button>
-      <button type="button" onClick={() => { setEdit('supply'); setError('') }}>Propose extra supply expense</button>
+      <button type="button" onClick={() => { setEditingSupply(undefined); setEdit('supply'); setError('') }}>Propose extra supply expense</button>
     </div>
     {edit === 'muster' && <RosterEditor key="muster" calendar={calendar} from={day} cancel={() => setEdit(undefined)}
       submit={(entry, identity) => {
         if (identity && entry.kind === 'muster') apply({ ...military, units: [...military.units, { ...identity, id: crypto.randomUUID(), changes: [entry] }] })
       }}/>}
-    {edit === 'supply' && <SupplyEditor calendar={calendar} from={day} units={military.units} cancel={() => setEdit(undefined)}
+    {edit === 'supply' && <SupplyEditor key={editingSupply?.id ?? 'new-supply'} calendar={calendar} from={day} units={military.units} original={editingSupply}
+      target={value => Math.max(closingDay(calendar, dueMonth(calendar, holding)), closingDay(calendar, monthAt(calendar, value)))} cancel={() => setEdit(undefined)}
       submit={supply => {
         const target = Math.max(closingDay(calendar, dueMonth(calendar, holding)), closingDay(calendar, monthAt(calendar, supply.day)))
-        apply({ ...military, supplies: [...military.supplies, { ...supply, target }] })
+        apply({ ...military, supplies: editingSupply ? military.supplies.map(item => item.id === supply.id ? { ...supply, target } : item)
+          : [...military.supplies, { ...supply, target }] })
       }}/>}
     {error && <p className="error" role="alert">{error}</p>}
     {military.units.some(unit => unit.archived) && <label className="check"><input type="checkbox" checked={showArchived}
@@ -61,12 +70,21 @@ export function MilitaryPanel({ calendar, clock, holding, military, initialDay, 
           ? `${formatGp(state.terms.rate)} per ${state.terms.rateType} per month` : `${state.terms.service === 'unpaid' ? 'Unpaid' : 'Obligation-based'} service`}{state.billing !== 'home' && ` · ${state.billing === 'unpaid' ? 'Unpaid deployment' : 'Costs covered elsewhere'}`}</p>
           : <p>Mustered on {date(history[0].change.day)}.</p>}
         <div className="button-group">
+          <button type="button" onClick={() => leave(() => { setEdit(undefined); setDetails(unit) })}>Edit unit details</button>
           {!unit.archived && <button type="button" onClick={() => { setEdit(unit); setError('') }}>Record roster change</button>}
           {latest?.change.kind === 'release' && latest.change.day <= clock && <button type="button" onClick={() =>
             apply({ ...military, units: military.units.map(item => item.id === unit.id ? { ...item, archived: !unit.archived } : item) })}>
             {unit.archived ? 'Unarchive unit' : 'Archive unit'}
           </button>}
         </div>
+        {details?.id === unit.id && <form className="form" onSubmit={event => {
+          event.preventDefault()
+          apply({ ...military, units: military.units.map(item => item.id === unit.id ? details : item) })
+        }}>
+          <label>Unit name<input required maxLength={120} value={details.name} onChange={e => setDetails({ ...details, name: e.target.value })}/></label>
+          <label>Unit type<input required maxLength={120} value={details.type} onChange={e => setDetails({ ...details, type: e.target.value })}/></label>
+          <div className="button-group"><button type="button" onClick={() => leave(() => setDetails(undefined))}>Cancel</button><button className="primary">Apply unit details</button></div>
+        </form>}
         {isEditing && <RosterEditor key={unit.id} calendar={calendar} from={day} unit={unit} correction={correction && selectedUnit === unit.id ? correction : undefined}
           previousTerms={state?.terms} currentLocation={state?.location} cancel={() => setEdit(undefined)}
           submit={entry => apply({ ...military, units: military.units.map(item =>
@@ -78,8 +96,23 @@ export function MilitaryPanel({ calendar, clock, holding, military, initialDay, 
             {change.notes && ` · ${change.notes}`}</li>)}</ul></details>
       </section>
     })}
-    {!!military.supplies.length && <details><summary>Extra supply expenses</summary><ul>{military.supplies.map(supply =>
-      <li key={supply.id}>{supply.title} · {formatGp(supply.amount)} {supply.balance} · {date(supply.day)} · First eligible {date(supply.target)}</li>)}</ul></details>}
+    {!!military.supplies.length && <details><summary>Extra supply expenses</summary><ul>{military.supplies.map(supply => {
+      const source = `supply:${supply.id}`
+      const hasDecision = (turn: { inputs: { military?: { decisions: { charge: { id: string } }[] } } }) =>
+        turn.inputs.military?.decisions.some(decision => decision.charge.id === source)
+      const posted = holding.turns.find(hasDecision)
+      const replay = holding.replay.find(hasDecision)
+      return <li key={supply.id} className="form">
+        <span>{supply.title} · {formatGp(supply.amount)} {supply.balance} · {date(supply.day)} · First eligible {date(supply.target)}</span>
+        {posted || replay ? <button type="button" onClick={() => openDecision((posted ?? replay)!.month, !!posted)}>{posted ? 'Open turn decision' : 'Open replay decision'}</button> :
+          <div className="button-group">
+            <button type="button" onClick={() => leave(() => { setDetails(undefined); setEditingSupply(supply); setEdit('supply') })}>Edit proposal</button>
+            <button type="button" className="danger" onClick={() => {
+              if (window.confirm(`Withdraw “${supply.title}”?`)) apply({ ...military, supplies: military.supplies.filter(item => item.id !== supply.id) })
+            }}>Withdraw proposal</button>
+          </div>}
+      </li>
+    })}</ul></details>}
   </div>
 }
 
@@ -96,6 +129,7 @@ function RosterEditor({ calendar, from, unit, previousTerms, currentLocation, co
   const [billing, setBilling] = useState<Billing>('home')
   const [terms, setTerms] = useState(previousTerms ?? defaultTerms)
   const [notes, setNotes] = useState('')
+  useChangedDraft([kind, day, name, type, strength, location, billing, terms, notes])
   return <form className="form" onSubmit={e => {
     e.preventDefault()
     const base = { id: crypto.randomUUID(), day, notes }
@@ -140,21 +174,23 @@ function RosterEditor({ calendar, from, unit, previousTerms, currentLocation, co
   </form>
 }
 
-function SupplyEditor({ calendar, from, units, submit, cancel }: {
-  calendar: Calendar; from: number; units: Unit[]; submit: (supply: Omit<Supply, 'target'>) => void; cancel: () => void
+function SupplyEditor({ calendar, from, units, original, target, submit, cancel }: {
+  calendar: Calendar; from: number; units: Unit[]; original?: Supply; target: (day: number) => number; submit: (supply: Omit<Supply, 'target'>) => void; cancel: () => void
 }) {
-  const [day, setDay] = useState(from)
-  const [title, setTitle] = useState('')
-  const [amount, setAmount] = useState('')
-  const [balance, setBalance] = useState<Supply['balance']>('cash')
-  const [unitId, setUnit] = useState('')
+  const [day, setDay] = useState(original?.day ?? from)
+  const [title, setTitle] = useState(original?.title ?? '')
+  const [amount, setAmount] = useState(original ? String(original.amount / 100) : '')
+  const [balance, setBalance] = useState<Supply['balance']>(original?.balance ?? 'cash')
+  const [unitId, setUnit] = useState(original?.unitId ?? '')
+  useChangedDraft([day, title, amount, balance, unitId])
   return <form className="form" onSubmit={e => {
     e.preventDefault()
-    submit({ id: crypto.randomUUID(), title, day, amount: Math.round(Number(amount) * 100), balance, unitId: unitId || undefined })
+    submit({ id: original?.id ?? crypto.randomUUID(), title, day, amount: Math.round(Number(amount) * 100), balance, unitId: unitId || undefined })
   }}>
     <p className="muted">Propose costs beyond routine upkeep. Approve the amount when closing the turn.</p>
     <label>Expense<input required maxLength={120} value={title} onChange={e => setTitle(e.target.value)}/></label>
     <DateField calendar={calendar} value={day} onChange={setDay} label="Supply date"/>
+    <p>First eligible turn closes {dateLabel(calendar, target(day))}.</p>
     <label>Unit<select value={unitId} onChange={e => setUnit(e.target.value)}><option value="">Holding-wide</option>
       {units.map(unit => <option key={unit.id} value={unit.id}>{unit.name}</option>)}</select></label>
     <div className="form-row">
@@ -163,6 +199,6 @@ function SupplyEditor({ calendar, from, units, submit, cancel }: {
         <option value="cash">Cash</option><option value="noncash">Noncash</option>
       </select></label>
     </div>
-    <div className="button-group"><button type="button" onClick={cancel}>Cancel</button><button className="primary">Add supply proposal</button></div>
+    <div className="button-group"><button type="button" onClick={cancel}>Cancel</button><button className="primary">{original ? 'Apply proposal edits' : 'Add supply proposal'}</button></div>
   </form>
 }

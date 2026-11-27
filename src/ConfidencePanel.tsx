@@ -1,3 +1,4 @@
+import { useDialogDraft } from './Dialog'
 import { useEffect, useState } from 'react'
 import { dateIndex, dateLabel, dateParts, displayYear, yearLabel, type Calendar } from './calendar'
 import {
@@ -72,6 +73,13 @@ export function ConfidencePanel({ calendar, clock, holding, revision, selectedEv
   const absolute = monthlyChanges.reduce((sum, item) => sum + Math.abs(item.change), Math.abs(change))
   const exceedsGuideline = Math.abs(change) > 10 || Math.abs(monthly) > 50 || absolute > 50
   const [approveGuideline, setApproveGuideline] = useState(false)
+
+  useDialogDraft(base !== state.base || startDate !== (state.start ?? start) ||
+    JSON.stringify(abilities) !== JSON.stringify(state.baseRoll?.abilities ?? Array<number>(6).fill(10)) ||
+    JSON.stringify(baseRoll) !== JSON.stringify(state.baseRoll) || optionsChanged || !!generation ||
+    (!!editing && JSON.stringify(editing) !== JSON.stringify(state.events.find(item => item.id === editing.id)) && !!(editing.title || editing.notes || editing.day !== clock || editing.disaster)) ||
+    (!!custom && !!custom.title) || !!effectTitle || !!effectAmount ||
+    (checkOpen && (!!change || !!modifier || notes !== (linkedCheck?.title ?? '') || checkDate !== (linkedCheck?.day ?? state.events.find(event => event.id === eventSource)?.resolvedDay ?? clock) || approveGuideline)))
 
   async function commit(next: Confidence, after?: () => void) {
     if (busy || stale) return

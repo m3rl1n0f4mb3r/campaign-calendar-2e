@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { dateParts, mod, type Calendar } from './calendar'
 import { dayOf, minutes, type EventData, type Occurrence, type Rule } from './events'
+import { useChangedDraft, useDialogLeave } from './Dialog'
 import { DateField } from './DateField'
 
 export type Scope = 'one' | 'future' | 'all'
@@ -13,6 +14,8 @@ export function EventEditor({ calendar, day, event, save, close }: {
   const [scope, setScope] = useState<Scope>(event?.series.rule ? 'one' : 'all')
   const [data, setData] = useState<EventData>(event ?? { title: '', notes: '', location: '', color: '#52745e', start: day * minutes, end: (day + 1) * minutes, allDay: true })
   const [rule, setRule] = useState<Rule | undefined>(event?.series.rule)
+  const leave = useDialogLeave()
+  useChangedDraft([data, rule], [event ? scope === 'all' ? event.series : event : { title: '', notes: '', location: '', color: '#52745e', start: day * minutes, end: (day + 1) * minutes, allDay: true }, event?.series.rule])
   const [error, setError] = useState('')
   const startDay = dayOf(data.start)
   const endDay = dayOf(data.end - (data.allDay ? minutes : 0))
@@ -61,6 +64,6 @@ export function EventEditor({ calendar, day, event, save, close }: {
       {isFestival && ['monthly', 'yearly'].includes(rule.frequency) && <label>Festival repeats<select value={rule.festival} onChange={e => setRule({ ...rule, festival: e.target.value as Rule['festival'] })}><option value="previous">Last day of previous month</option><option value="next">First day of next month</option><option value="festival">Same festival day each year</option></select></label>}
     </>}
     {error && <p role="alert" className="error">{error}</p>}
-    <div className="actions">{event && <button type="button" className="danger" onClick={() => save(scope)}>Delete</button>}<button type="button" onClick={close}>Cancel</button><button className="primary">Save event</button></div>
+    <div className="actions">{event && <button type="button" className="danger" onClick={() => save(scope)}>Delete</button>}<button type="button" onClick={() => leave(close)}>Cancel</button><button className="primary">Save event</button></div>
   </form>
 }

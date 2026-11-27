@@ -12,12 +12,13 @@ import { UserGuide, type GuideTopic } from './UserGuide'
 import { DomainPanel, type ReceiptLink } from './DomainPanel'
 import { constructionEntries, dominionEntries, turnEntries } from './domain'
 import { ActionMenu } from './ActionMenu'
-import { CalendarEditor } from './CalendarEditor'
+import { CalendarEditor, structuralCalendarChange } from './CalendarEditor'
 import { activeSieges, engagementEntries } from './engagement'
 import { EngagementPanel, type EngagementLink } from './EngagementPanel'
 import { militaryEntries } from './military'
 import { PrintCalendar } from './PrintCalendar'
 import type { PrintEntry } from './printing'
+import { Dialog } from './Dialog'
 import './style.css'
 
 type View = 'Month' | 'Week' | 'Day' | 'Agenda'
@@ -36,15 +37,6 @@ function initialize() {
   }
 }
 
-function Dialog({ title, close, children }: { title: string; close: () => void; children: ReactNode }) {
-  const dialog = useRef<HTMLDialogElement>(null)
-  useEffect(() => { dialog.current?.showModal() }, [])
-  return <dialog ref={dialog} aria-label={title} onCancel={e => { e.preventDefault(); close() }}>
-    <header className="dialog-header"><h2>{title}</h2><button aria-label="Close dialog" onClick={close}>×</button></header>
-    {children}
-  </dialog>
-}
-
 function App() {
   const [initial] = useState(initialize)
   const [guide, setGuide] = useState<GuideTopic>()
@@ -55,6 +47,8 @@ function App() {
   }
   const [store, setStore] = useState(initial.store)
   const [raw, setRaw] = useState(initial.raw)
+  const [saving, setSaving] = useState(false)
+  const writePending = useRef(false)
   const [locked, setLocked] = useState(initial.locked)
   const [error, setError] = useState(initial.error)
   const campaign = store.campaigns.find(item => item.id === store.active)!
@@ -117,7 +111,9 @@ function App() {
   })
 
   async function commit(next: Store, replace = false) {
-    if (locked && !replace) return false
+    if (writePending.current || (locked && !replace)) return false
+    writePending.current = true
+    setSaving(true)
     const write = () => saveIfCurrent(localStorage, raw, next)
     try {
       if (!navigator.locks && [...store.campaigns, ...next.campaigns].some(item => item.holdings?.length)) {
@@ -127,7 +123,6 @@ function App() {
       const result = navigator.locks ? await navigator.locks.request(key, write) : write()
       if (!result.saved) {
         syncSaved(result.raw)
-        if (panel !== 'domains') close()
         setError('Campaign data changed in another tab. Review the latest data before saving.')
         return false
       }
@@ -139,7 +134,7 @@ function App() {
     } catch (cause) {
       setError(cause instanceof Error && cause.name === 'ZodError' ? 'The changes contain invalid or out-of-range data.' : 'Could not save to browser storage. Your previous data is still in place.')
       return false
-    }
+    } finally { writePending.current = false; setSaving(false) }
   }
 
   const saveCampaign = (next: Campaign) => commit({ ...store, campaigns: store.campaigns.map(item => item.id === next.id ? next : item) })
@@ -300,7 +295,7 @@ function App() {
   return <>
     <header className="masthead">
       <div className="brand"><span aria-hidden="true">◈</span> Campaign Calendar</div>
-      <nav className="header-actions" aria-label="Campaign tools">
+      <nav className="header-actions" aria-label="Campaign tools" data-dialog-fallback>
         <ActionMenu label="Campaign">{choose => <>
           <label className="campaign-picker">Switch campaign
             <select value={store.active} onChange={event => {
@@ -392,7 +387,8 @@ function App() {
         <section><h3>Events</h3>{selectedEntries.length ? selectedEntries.map(entry => entry.render(selected)) : <p className="muted">No events on this date.</p>}</section>
       </aside>
     </main>
-    {panel && <Dialog key={panel} title={dialogTitle[panel]} close={close}>
+    {panel && <Dialog key={panel} title={dialogTitle[panel]} close={close} saving={saving}
+      dirty={panel === 'new' ? !!campaignName || preset !== 'generic' : panel === 'data' ? !!restore : panel === 'clock' && draftDate !== campaign.current}>
       {error && <p role="alert" className="error">{error}</p>}
       {panel === 'print' && <PrintCalendar calendar={cal} campaignName={campaign.name} current={campaign.current}
         showMoons={showCalendarMoons} moonList={moonList} moonLegend={moonLegend} close={close} viewQuery={search?.query}
@@ -406,7 +402,12 @@ function App() {
       {panel === 'domains' && <DomainPanel campaign={campaign} revision={raw} receipt={receipt} dominionEvent={dominionEvent} constructionProject={constructionProject} militaryEntry={militaryEntry} confidenceReview={confidenceReview} openEngagements={holdingId => openEngagement(undefined, holdingId)} help={openGuide} backup={backup} save={holdings => saveCampaign({ ...campaign, holdings })}/>}
       {panel === 'event' && <EventEditor calendar={cal} day={selected} event={editing} save={saveEvent} close={close}/>}
       {panel === 'calendar' && <CalendarEditor campaign={campaign} close={close} backup={backup} save={async next => {
-        if (await saveCampaign(next)) { setSelected(next.current); setSearch(undefined); close() }
+        if (await saveCampaign(next)) {
+          if (structuralCalendarChange(cal, next.calendar)) {
+            setSelected(next.current); setSearch(undefined)
+          }
+          close()
+        }
       }}/>}
       {(panel === 'jump' || panel === 'clock') && <form className="form" onSubmit={e => {
         e.preventDefault()

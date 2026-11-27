@@ -1,3 +1,4 @@
+import { useDialogDraft, useDialogLeave } from './Dialog'
 import { useState } from 'react'
 import { dateLabel, displayYear } from './calendar'
 import { closingDay, dueMonth, formatGp, monthAt, territoryPopulation, previewTurn, recordTurn, reopenTurn, resourceRates, sameMonth, territoriesFor, territoryDefaults, replayInputs, turnEstimates, paymentLabels, availableEffects,
@@ -29,8 +30,8 @@ type Screen =
   | { type: 'construction'; id: string; projects: Project[]; selectedProject?: string; revision: Props['revision'] }
   | { type: 'military'; id: string; draft: Military; selectedUnit?: string; day?: number; correction?: string; revision: Props['revision'] }
   | { type: 'confidence'; id: string; selectedEvent?: string; initialCheck?: InitialConfidenceCheck }
-  | { type: 'holding'; draft: Holding; revision: Props['revision'] }
-  | { type: 'preview'; id: string; month: TurnMonth; draft: TurnInputs; revision: Props['revision']; projects?: Project[]; reset?: boolean }
+  | { type: 'holding'; draft: Holding; initial: string; revision: Props['revision'] }
+  | { type: 'preview'; id: string; month: TurnMonth; draft: TurnInputs; initial: string; revision: Props['revision']; projects?: Project[]; reset?: boolean }
   | { type: 'receipt'; link: ReceiptLink }
   | { type: 'reopen'; link: ReceiptLink; revision: Props['revision'] }
 
@@ -196,6 +197,14 @@ export function DomainPanel({ campaign, revision, receipt, dominionEvent, constr
   const [error, setError] = useState('')
   const { calendar, current } = campaign
   const holdings = campaign.holdings ?? []
+  const leave = useDialogLeave()
+  const draftHolding = screen && 'id' in screen ? holdings.find(item => item.id === screen.id) : undefined
+  const changed = screen?.type === 'military' ? JSON.stringify(screen.draft) !== JSON.stringify(draftHolding?.military ?? emptyMilitary())
+    : screen?.type === 'construction' ? JSON.stringify(screen.projects) !== JSON.stringify(draftHolding?.projects ?? [])
+      : screen?.type === 'holding' || screen?.type === 'preview' ? JSON.stringify(screen.draft) !== screen.initial ||
+        (screen.type === 'preview' && !!screen.projects && JSON.stringify(screen.projects) !== JSON.stringify(draftHolding?.projects ?? []))
+        : screen?.type === 'reopen'
+  useDialogDraft(!!changed)
   const date = (month: TurnMonth) => dateLabel(calendar, closingDay(calendar, month))
   const go = (next?: Screen) => { setError(''); setScreen(next) }
   const stale = !!(screen && 'revision' in screen && screen.revision !== revision)
@@ -215,13 +224,16 @@ export function DomainPanel({ campaign, revision, receipt, dominionEvent, constr
       const conflicts = new Set(militaryConflicts(calendar, holding, month).map(item => item.charge.id))
       draft.military = { decisions: draft.military.decisions.filter(item => !conflicts.has(item.charge.id)) }
     }
-    go({ type: 'preview', id: holding.id, month, draft, revision })
+    go({ type: 'preview', id: holding.id, month, draft, initial: JSON.stringify(draft), revision })
   }
-  const startHolding = (holding?: Holding) => go({ type: 'holding', revision, draft: holding ?? {
+  const startHolding = (holding?: Holding) => {
+    const draft: Holding = holding ?? {
     id: crypto.randomUUID(), name: '', ruler: '', liege: '', first: monthAt(calendar, current),
     opening: { cash: 0, noncash: 0 }, families: 0, tax: 100, services: 1000, resources: [], territories: [{ id: crypto.randomUUID(), name: 'Core territory', settlement: 'wilderness', families: 0, resources: [] }], turns: [], replay: [],
-  } })
-  const back = <button type="button" onClick={() => go()}>Back to holdings</button>
+    }
+    go({ type: 'holding', revision, draft, initial: JSON.stringify(draft) })
+  }
+  const back = <button type="button" onClick={() => leave(() => go())}>Back to holdings</button>
 
   if (screen?.type === 'military') {
     const holding = holdings.find(item => item.id === screen.id)
@@ -230,6 +242,11 @@ export function DomainPanel({ campaign, revision, receipt, dominionEvent, constr
     return <div className="form">
       {stale ? <p className="warning" role="alert">Campaign data changed. Return to holdings and reopen the roster.</p>
         : <MilitaryPanel calendar={calendar} clock={current} holding={holding} military={screen.draft} initialDay={screen.day}
+          openDecision={(month, posted) => leave(() => {
+            if (posted) go({ type: 'receipt', link: { holdingId: holding.id, month } })
+            else if (sameMonth(dueMonth(calendar, holding), month) && closingDay(calendar, month) <= current) startPreview(holding)
+            else { go(); setError(`Replay earlier turns before adjusting the supply decision for ${date(month)}.`) }
+          })}
           selectedUnit={screen.selectedUnit} correction={screen.correction} change={draft => setScreen({ ...screen, draft })} help={() => help('military-expenses')}/>}
       <div className="actions">{back}<button className="primary" disabled={!changed || pending || stale}
         onClick={() => void persist({ ...holding, military: screen.draft })}>Save roster and expenses</button></div>

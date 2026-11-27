@@ -1,4 +1,5 @@
 import { lazy, Suspense, useState } from 'react'
+import { useChangedDraft, useDialogDraft, useDialogLeave } from './Dialog'
 import { dateLabel } from './calendar'
 import { DateField } from './DateField'
 import { closingDay, formatGp, type TurnMonth } from './domain'
@@ -33,6 +34,9 @@ export function EngagementPanel({ campaign, revision, selected, initialId, initi
   const item = items.find(entry => entry.id === id)
   const date = (day: number) => dateLabel(calendar, day)
   const holdings = campaign.holdings ?? []
+  const leave = useDialogLeave()
+  useDialogDraft(!!draft && (item ? JSON.stringify(draft) !== JSON.stringify(item) :
+    !!(draft.title || draft.notes || draft.outcome || draft.location || draft.participants.length || draft.kind !== 'battle' || draft.start !== selected || draft.holdingId !== initialHolding)))
   const defaultDay = item?.end ?? (item?.kind === 'battle' ? item.start : Math.max(item?.start ?? current, current))
   async function commit(action: () => Campaign, done?: () => void) {
     setError('')
@@ -51,7 +55,7 @@ export function EngagementPanel({ campaign, revision, selected, initialId, initi
 
   return <div className="form">
     <div className="guide-context"><button type="button" onClick={help}>Help with battles and sieges</button>
-      {(item || draft) && <button type="button" onClick={() => { setId(undefined); setDraft(undefined); setProposal(undefined); setError('') }}>Back to engagements</button>}</div>
+      {(item || draft) && <button type="button" onClick={() => leave(() => { setId(undefined); setDraft(undefined); setProposal(undefined); setError('') })}>Back to engagements</button>}</div>
     {error && <p className="error" role="alert">{error}</p>}
     {draft ? <form className="form" onSubmit={event => {
       event.preventDefault()
@@ -80,7 +84,7 @@ export function EngagementPanel({ campaign, revision, selected, initialId, initi
       </fieldset>
       <label>Outcome<textarea value={draft.outcome} onChange={e => setDraft({ ...draft, outcome: e.target.value })}/></label>
       <label>Notes<textarea value={draft.notes} onChange={e => setDraft({ ...draft, notes: e.target.value })}/></label>
-      <div className="actions"><button type="button" onClick={() => setDraft(undefined)}>Cancel</button><button className="primary" disabled={busy}>Save engagement</button></div>
+      <div className="actions"><button type="button" onClick={() => leave(() => setDraft(undefined))}>Cancel</button><button className="primary" disabled={busy}>Save engagement</button></div>
     </form> : item ? <>
       <h3>{item.title}</h3>
       <p>{item.kind === 'battle' ? 'Battle' : 'Siege'} · {date(item.start)}{item.kind === 'siege' && (item.end === undefined ? ' · No end date' : ` – ${date(item.end)}`)}
@@ -212,6 +216,7 @@ function ConsequenceFields({ campaign, engagement, day, original, submit, cancel
   const strength = rosterStrength(holding, unitId, effective)
   const project = holding?.projects?.find(item => item.id === projectId)
   const editingExpense = original?.status === 'applied'
+  useChangedDraft([kind, holdingId, effective, unitId, delta, title, amount, workDays, projectId, costId, balance])
   const parsedAmount = (input: HTMLInputElement) => input.value === '' ? undefined : Math.round(input.valueAsNumber * 100)
   return <form className="form" onSubmit={event => {
     event.preventDefault()

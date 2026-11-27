@@ -1,3 +1,4 @@
+import { useChangedDraft, useDialogDraft } from './Dialog'
 import { useState } from 'react'
 import { dateLabel, dateParts, type Calendar } from './calendar'
 import { EstimateHistory } from './EstimatePanel'
@@ -19,6 +20,8 @@ const paceOptions = <><option value="0">No work</option><option value="1">Half d
 
 export function ConstructionPanel({ calendar, clock, holding, projects, change, month, selectedProject, help, backup, openReceipt }: Props) {
   const [settings, setSettings] = useState<Project>()
+  useDialogDraft(!!settings && JSON.stringify(settings) !== JSON.stringify(projects.find(item => item.id === settings.id)) &&
+    !!(settings.name || settings.budget || settings.notes || settings.target !== undefined))
   const [error, setError] = useState('')
   const [expanded, setExpanded] = useState<string | undefined>(selectedProject)
   const span = month ? periodSpan(calendar, month) : undefined
@@ -138,6 +141,8 @@ function ProjectWork({ calendar, clock, project, holding, month, update, backup,
   const [costSource, setCostSource] = useState('')
   const next = dueMonth(calendar, holding)
   const [costDay, setCostDay] = useState(closingDay(calendar, month ?? next))
+  useDialogDraft(!!reopen || correct !== undefined || !!rangeNotes || !!costName || !!costAmount)
+  useChangedDraft([workOverride, rangeFrom, rangeThrough, rangePace, openEnd, rangeReview, balance, costSource, costDay])
   const target = monthAt(calendar, costDay)
   const closed = closingDay(calendar, target) < closingDay(calendar, next)
   const end = confirmedCompletion(project)
@@ -318,6 +323,7 @@ function ReviewEditor({ calendar, clock, project, due, save }: {
     const finish = forecast(calendar, updated)
     revisedForecast = finish === undefined ? 'Paused' : dateLabel(calendar, finish)
   }
+  useChangedDraft([roll, weather, notes, setback, extra, manualExtra, incident])
   function apply(skip: boolean) {
     save({ id: saved?.id ?? crypto.randomUUID(), month: due.month, roll: skip ? undefined : roll, notes,
       incident: skip ? undefined : incident, setbackDice: !skip && severe ? setback : undefined,

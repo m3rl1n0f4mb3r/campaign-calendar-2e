@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { dateLabel } from './calendar'
+import { useChangedDraft, useDialogLeave } from './Dialog'
 import { DateField } from './DateField'
 import { rollDie } from './confidence'
 import type { Engagement } from './engagement'
@@ -32,14 +33,15 @@ export default function QuickResolutionPanel({ campaign, selected, engagement, s
     catch (cause) { setError(cause instanceof Error && cause.name !== 'ZodError' ? cause.message : 'Enter valid dates, force values, and rolls.') }
     finally { setBusy(false) }
   }
+  const leave = useDialogLeave()
   const scoped = engagement ? all.filter(entry => entry.engagementId === engagement.id) : all
   return <div className="form">
     <div className="guide-context"><h3>Castle Guide quick resolution</h3>
-      <button type="button" onClick={() => {
+      <button type="button" onClick={() => leave(() => {
         setError('')
         if (item || creating) { setCreating(false); setId(undefined) }
         else back()
-      }}>{item || creating ? 'Back to resolutions' : 'Back to battles and sieges'}</button></div>
+      })}>{item || creating ? 'Back to resolutions' : 'Back to battles and sieges'}</button></div>
     {error && <p className="error" role="alert">{error}</p>}
     {creating ? <Setup campaign={campaign} selected={selected} engagement={engagement} busy={busy} save={draft =>
       void persist(() => storeResolution(campaign, draft), () => { setCreating(false); setId(draft.id) })}/>
@@ -73,6 +75,7 @@ function Setup({ campaign, selected, engagement, busy, save }: {
   const labels = [...new Set(engagement?.participants.map(person => person.side))]
   const [a, setA] = useState(defaultForce(labels[0] ?? (kind === 'siege' ? 'Attackers' : 'Force A')))
   const [b, setB] = useState(defaultForce(labels[1] ?? (kind === 'siege' ? 'Defenders' : 'Force B')))
+  useChangedDraft([kind, title, start, a, b])
   return <form className="form" onSubmit={e => {
     e.preventDefault()
     save({ id: crypto.randomUUID(), title, kind, start, engagementId: engagement?.id, rules: 'DMGR2 chapter 8 v1', forces: { a, b }, steps: [] })
@@ -155,6 +158,7 @@ function ResolutionEditor({ campaign, resolution, busy, run, undo, discard, appr
   const [narrative, setNarrative] = useState('')
   const [reason, setReason] = useState('')
   const [link, setLink] = useState(resolution.engagementId ?? '')
+  useChangedDraft([day, roller, roll, adjustment, winner, note, outcome, narrative, reason, link])
   const { calendar } = campaign
   const nameOf = (side: Side) => resolution.forces[side].name
   const dice = next.kind === 'morale' || next.kind === 'rally' ? 20 : 100
@@ -247,6 +251,7 @@ function ConditionEditor({ current, position, kind, defender, save }: {
 }) {
   const [value, setValue] = useState(current)
   const [morale, setMorale] = useState(position.morale)
+  useChangedDraft([value, morale])
   return <form className="form" onSubmit={e => { e.preventDefault(); save(value, morale) }}>
     <ConditionFields kind={kind} defender={defender} value={value} change={setValue}/>
     <MoraleField value={morale} change={setMorale}/>
