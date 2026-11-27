@@ -89,7 +89,7 @@ export function UserGuide({ topic, onClose }: { topic: GuideTopic; onClose: () =
       <ol>
         <li>Open <strong>Domain → Domain Play → Add holding</strong>. Set the ruler, optional liege, opening balances, and <strong>First month to close</strong>.</li>
         <li>Give each territory its population and resources. A holding aggregates those territories in one ledger. Use <strong>Edit holding</strong> to change defaults for future turns.</li>
-        <li>Use <strong>Archive holding</strong> to pause new turn posting and hide the holding from the default list. Receipts, calendar entries, and pending charges remain available. Use <strong>Show archived holdings</strong> and <strong>Unarchive holding</strong> to resume from the same unresolved turn.</li>
+        <li>At the bottom of <strong>Edit holding</strong>, choose <strong>Archive holding</strong> to pause new turn posting and hide the holding from the default list. Receipts, calendar entries, and pending charges remain available. Use <strong>Show archived holdings</strong>, then <strong>Edit holding → Unarchive holding</strong> to resume from the same unresolved turn.</li>
       </ol>
     </section>
     <section aria-labelledby="close-a-turn" hidden={article !== 'close-a-turn'}>

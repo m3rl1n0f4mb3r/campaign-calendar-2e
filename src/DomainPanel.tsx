@@ -324,6 +324,7 @@ export function DomainPanel({ campaign, revision, receipt, dominionEvent, constr
 
   if (screen?.type === 'holding') {
     const { draft } = screen
+    const savedHolding = holdings.find(item => item.id === draft.id)
     const change = (patch: Partial<Holding>) => setScreen({ ...screen, draft: { ...draft, ...patch } })
     const year = displayYear(calendar, draft.first.year)
     const openingEditable = draft.turns.length === 0
@@ -369,7 +370,14 @@ export function DomainPanel({ campaign, revision, receipt, dominionEvent, constr
           <Money label="Opening noncash value (gp)" value={draft.opening.noncash} change={noncash => change({ opening: { ...draft.opening, noncash: noncash ?? 0 } })}/>
         </div>
       </>}
-      <div className="actions">{back}<button className="primary" disabled={pending || stale}>Save holding</button></div>
+      <div className="actions">
+        {savedHolding && <button type="button" disabled={pending || stale} onClick={() => leave(() => {
+          if (savedHolding.archived || window.confirm(`Archive “${savedHolding.name}”? Turn posting will pause. Receipts and pending charges stay available.`)) {
+            void persist({ ...savedHolding, archived: !savedHolding.archived })
+          }
+        })}>{savedHolding.archived ? 'Unarchive holding' : 'Archive holding'}</button>}
+        {back}<button className="primary" disabled={pending || stale}>Save holding</button>
+      </div>
     </form>
   }
 
@@ -585,11 +593,6 @@ export function DomainPanel({ campaign, revision, receipt, dominionEvent, constr
         <p>{holding.archived ? 'Turn posting paused. Next unresolved turn' : 'Next turn closes'} {date(next)}.</p>
         <div className="button-group">
           <button onClick={() => startHolding(holding)}>Edit holding</button>
-          <button disabled={pending} onClick={() => {
-            if (holding.archived || window.confirm(`Archive “${holding.name}”? Turn posting will pause. Receipts and pending charges stay available.`)) {
-              void persist({ ...holding, archived: !holding.archived })
-            }
-          }}>{holding.archived ? 'Unarchive holding' : 'Archive holding'}</button>
           <button onClick={() => go({ type: 'construction', id: holding.id, projects: holding.projects ?? [], revision })}>Construction projects</button>
           <button onClick={() => openEngagements(holding.id)}>Battles and sieges</button>
           <button onClick={() => go({ type: 'military', id: holding.id, draft: holding.military ?? emptyMilitary(), revision })}>Garrison roster</button>
