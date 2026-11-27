@@ -9,12 +9,12 @@ type Props = {
   calendar: Calendar; campaignName: string; current: number; showMoons: boolean
   currentView: PrintSection; viewQuery?: string
   entries: (from: number, to: number, query?: string) => PrintEntry[]
-  moonList: (day: number) => ReactNode; moonLegend: ReactNode; close: () => void
+  moonList: (day: number) => ReactNode; moonLegend: ReactNode; close: () => void; help: () => void
 }
 type Options = { sections: PrintSection[]; query?: string; kinds: ReadonlySet<PrintKind>; moons: boolean; pageBreaks: boolean }
 const kinds = Object.keys(printKinds) as PrintKind[]
 
-export function PrintCalendar({ calendar, campaignName, current, showMoons, currentView, viewQuery, entries, moonList, moonLegend, close }: Props) {
+export function PrintCalendar({ calendar, campaignName, current, showMoons, currentView, viewQuery, entries, moonList, moonLegend, close, help }: Props) {
   const year = dateParts(calendar, current).year
   const [range, setRange] = useState<'current' | 'periods'>('current')
   const [start, setStart] = useState(() => dateIndex(calendar, { year, period: calendar.periods[0].id, day: 1 }))
@@ -41,6 +41,7 @@ export function PrintCalendar({ calendar, campaignName, current, showMoons, curr
       flushSync(() => setReport({ sections, kinds: included, moons, pageBreaks, query: range === 'current' ? viewQuery : undefined }))
       window.print()
     }}>
+      <button type="button" onClick={help}>Help with printing</button>
       <label>Print range<select value={range} onChange={event => { setRange(event.target.value as typeof range); setError('') }}>
         <option value="current">Current view</option><option value="periods">Choose months or festivals</option>
       </select></label>

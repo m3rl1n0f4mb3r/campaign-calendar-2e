@@ -8,7 +8,7 @@ import { militarySchema, rosterHistory, rosterLabels, validMilitary,
 
 type Props = {
   calendar: Calendar; clock: number; holding: Holding; military: Military; initialDay?: number; selectedUnit?: string; correction?: string
-  openDecision: (month: TurnMonth, posted: boolean) => void
+  openDecision: (month: TurnMonth, posted: boolean, day: number) => void
   change: (value: Military) => void; help: () => void
 }
 const defaultTerms: Terms = { service: 'unpaid', rateType: 'unit', rate: 0 }
@@ -104,7 +104,7 @@ export function MilitaryPanel({ calendar, clock, holding, military, initialDay, 
       const replay = holding.replay.find(hasDecision)
       return <li key={supply.id} className="form">
         <span>{supply.title} · {formatGp(supply.amount)} {supply.balance} · {date(supply.day)} · First eligible {date(supply.target)}</span>
-        {posted || replay ? <button type="button" onClick={() => openDecision((posted ?? replay)!.month, !!posted)}>{posted ? 'Open turn decision' : 'Open replay decision'}</button> :
+        {posted || replay ? <button type="button" onClick={() => openDecision((posted ?? replay)!.month, !!posted, day)}>{posted ? 'Open turn decision' : 'Open replay decision'}</button> :
           <div className="button-group">
             <button type="button" onClick={() => leave(() => { setDetails(undefined); setEditingSupply(supply); setEdit('supply') })}>Edit proposal</button>
             <button type="button" className="danger" onClick={() => {

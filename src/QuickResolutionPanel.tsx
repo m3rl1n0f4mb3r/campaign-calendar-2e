@@ -14,10 +14,10 @@ const sides = ['a', 'b'] as const
 type Side = typeof sides[number]
 type Props = {
   campaign: Campaign; selected: number; engagement?: Engagement; save: (campaign: Campaign) => Promise<boolean>
-  back: () => void; openEngagement: (id: string) => void
+  help: () => void; back: () => void; openEngagement: (id: string) => void
 }
 
-export default function QuickResolutionPanel({ campaign, selected, engagement, save, back, openEngagement }: Props) {
+export default function QuickResolutionPanel({ campaign, selected, engagement, save, back, openEngagement, help }: Props) {
   const [id, setId] = useState<string>()
   const [creating, setCreating] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -36,7 +36,7 @@ export default function QuickResolutionPanel({ campaign, selected, engagement, s
   const leave = useDialogLeave()
   const scoped = engagement ? all.filter(entry => entry.engagementId === engagement.id) : all
   return <div className="form">
-    <div className="guide-context"><h3>Castle Guide quick resolution</h3>
+    <div className="guide-context"><h3>Castle Guide quick resolution</h3><button type="button" onClick={help}>Help with quick resolution</button>
       <button type="button" onClick={() => leave(() => {
         setError('')
         if (item || creating) { setCreating(false); setId(undefined) }

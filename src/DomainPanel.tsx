@@ -280,9 +280,9 @@ export function DomainPanel({ campaign, revision, receipt, dominionEvent, constr
     return <div className="form">
       {stale ? <p className="warning" role="alert">Campaign data changed. Return to holdings and reopen the roster.</p>
         : <MilitaryPanel calendar={calendar} clock={current} holding={holding} military={screen.draft} initialDay={screen.day}
-          openDecision={(month, posted) => leave(() => {
-            if (posted) { setReturnScreen({ screen: cleanSource(screen), label: 'Back to garrison roster' }); go({ type: 'receipt', link: { holdingId: holding.id, month } }) }
-            else if (!holding.archived && sameMonth(dueMonth(calendar, holding), month) && closingDay(calendar, month) <= current) { setReturnScreen({ screen: cleanSource(screen), label: 'Back to garrison roster' }); startPreview(holding) }
+          openDecision={(month, posted, rosterDay) => leave(() => {
+            if (posted) { setReturnScreen({ screen: cleanSource({ ...screen, day: rosterDay }), label: 'Back to garrison roster' }); go({ type: 'receipt', link: { holdingId: holding.id, month } }) }
+            else if (!holding.archived && sameMonth(dueMonth(calendar, holding), month) && closingDay(calendar, month) <= current) { setReturnScreen({ screen: cleanSource({ ...screen, day: rosterDay }), label: 'Back to garrison roster' }); startPreview(holding) }
             else { go(); setError(`Replay earlier turns before adjusting the supply decision for ${date(month)}.`) }
           })}
           selectedUnit={screen.selectedUnit} correction={screen.correction} change={draft => setScreen({ ...screen, draft })} help={() => help('military-expenses')}/>}
@@ -334,7 +334,8 @@ export function DomainPanel({ campaign, revision, receipt, dominionEvent, constr
       const families = territories.reduce((sum, item) => sum + item.families, 0)
       void persist({ ...draft, territories, families, resources: territories.length === 1 ? territories[0].resources : [] })
     }}>
-      <h3>{holdings.some(item => item.id === draft.id) ? 'Edit holding' : 'New holding'}</h3>
+      <div className="guide-context"><h3>{holdings.some(item => item.id === draft.id) ? `${draft.name} · Edit holding` : 'New holding'}</h3>
+        <button type="button" onClick={() => help('manage-holdings')}>Help with holdings</button></div>
       {stale && <p role="alert" className="warning">Campaign data changed. Return to holdings and reopen the editor.</p>}
       <div className="domain-fields">
         <label>Holding name<input required maxLength={120} value={draft.name} onChange={e => change({ name: e.target.value })}/></label>
@@ -536,7 +537,7 @@ export function DomainPanel({ campaign, revision, receipt, dominionEvent, constr
       </div>
     }
     return <div className="form">
-      <h3>{turn.name} · {date(turn.month)}</h3>
+      <h3>{turn.name} · {date(turn.month)} <span className="workflow-status workflow-status-posted">Posted receipt</span></h3>
       <p>{turn.ruler}{turn.liege && ` · Liege: ${turn.liege}`}</p>
       <p>{turn.inputs.families} families · {formatGp(turn.inputs.tax)} tax per family · {formatGp(turn.inputs.services)} services per family</p>
       {turn.territories && <ul>{turn.territories.map(item => {

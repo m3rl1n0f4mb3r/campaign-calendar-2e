@@ -18,9 +18,9 @@ export type EngagementLink =
   | { kind: 'expense'; holdingId: string; month: TurnMonth }
   | { kind: 'confidence'; holdingId: string; id: string; day: number; title: string }
 
-export function EngagementPanel({ campaign, revision, selected, initialId, initialHolding, save, openLink, backToHoldings, help }: {
+export default function EngagementPanel({ campaign, revision, selected, initialId, initialHolding, save, openLink, backToHoldings, help, quickHelp }: {
   campaign: Campaign; revision: string | null; selected: number; initialId?: string; initialHolding?: string
-  backToHoldings?: () => void; save: (campaign: Campaign) => Promise<boolean>; openLink: (link: EngagementLink, sourceId: string, sourceHolding?: string) => void; help: () => void
+  backToHoldings?: () => void; save: (campaign: Campaign) => Promise<boolean>; openLink: (link: EngagementLink, sourceId: string, sourceHolding?: string) => void; help: () => void; quickHelp: () => void
 }) {
   const [id, setId] = useState(initialId)
   const [showArchived, setShowArchived] = useState(false)
@@ -55,7 +55,7 @@ export function EngagementPanel({ campaign, revision, selected, initialId, initi
     finally { setBusy(false) }
   }
 
-  if (quick) return <Suspense fallback={<p role="status">Loading quick resolution…</p>}><QuickResolutionPanel campaign={campaign} selected={selected} engagement={item} save={save}
+  if (quick) return <Suspense fallback={<p role="status">Loading quick resolution…</p>}><QuickResolutionPanel campaign={campaign} selected={selected} engagement={item} save={save} help={quickHelp}
     back={() => setQuick(false)} openEngagement={id => { setId(id); setQuick(false) }}/></Suspense>
 
   return <div className="form">

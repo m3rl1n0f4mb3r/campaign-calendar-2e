@@ -281,7 +281,7 @@ function ProjectWork({ calendar, clock, project, holding, month, update, backup,
       {!!project.costs.length && <ul>{project.costs.map(cost => {
         const receipt = holding.turns.find(turn => turn.inputs.effectIds?.includes(cost.id))
         const replay = holding.replay.some(turn => turn.inputs.effectIds?.includes(cost.id))
-        return <li key={cost.id}>{cost.title} · {formatGp(-cost.amount)} · {date(closingDay(calendar, cost.target))} · {receipt ? 'Posted' : 'Proposed'}
+        return <li key={cost.id}>{cost.title} · {formatGp(-cost.amount)} · {date(closingDay(calendar, cost.target))} <span className={receipt ? 'workflow-status workflow-status-posted' : 'workflow-status'}>{receipt ? 'Posted' : 'Proposed'}</span>
           {receipt && openReceipt && <button type="button" onClick={() => openReceipt(receipt.month)}>Open receipt</button>}
           {!receipt && !replay && <button type="button" onClick={() => post(() => ({
             ...project, costs: project.costs.filter(item => item.id !== cost.id),

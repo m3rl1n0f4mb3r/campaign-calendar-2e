@@ -8,8 +8,8 @@ export type Scope = 'one' | 'future' | 'all'
 const clock = (value: number) => `${String(Math.floor(mod(value, minutes) / 60)).padStart(2, '0')}:${String(mod(value, 60)).padStart(2, '0')}`
 const timeOf = (value: string) => Number(value.slice(0, 2)) * 60 + Number(value.slice(3))
 
-export function EventEditor({ calendar, day, event, save, close }: {
-  calendar: Calendar; day: number; event?: Occurrence; save: (scope: Scope, data?: EventData, rule?: Rule) => void; close: () => void
+export function EventEditor({ calendar, day, event, save, close, help }: {
+  calendar: Calendar; day: number; event?: Occurrence; save: (scope: Scope, data?: EventData, rule?: Rule) => void; close: () => void; help: () => void
 }) {
   const [scope, setScope] = useState<Scope>(event?.series.rule ? 'one' : 'all')
   const [data, setData] = useState<EventData>(event ?? { title: '', notes: '', location: '', color: '#52745e', start: day * minutes, end: (day + 1) * minutes, allDay: true })
@@ -27,6 +27,7 @@ export function EventEditor({ calendar, day, event, save, close }: {
     if (seriesEdit && rule?.until !== undefined && rule.until < startDay) { setError('The repeat end date must be on or after the event start.'); return }
     save(scope, { ...data, title: data.title.trim() }, seriesEdit ? rule : undefined)
   }}>
+    <button type="button" onClick={help}>Help with events</button>
     {event?.series.rule && <label>Apply changes to<select value={scope} onChange={change => {
       const value = change.target.value as Scope
       setScope(value)

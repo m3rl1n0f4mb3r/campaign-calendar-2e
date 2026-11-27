@@ -71,7 +71,7 @@ dialog { background: var(--paper); color: inherit; border: 1px solid var(--borde
 dialog::backdrop { background: #111d17a6; }
 dialog > .dialog-header {
   position: sticky;
-  top: -1.25rem;
+  top: 0;
   z-index: 2;
   background: var(--paper);
   padding-block: .8rem;
@@ -198,6 +198,7 @@ dialog:has(.migration-grid) { width: min(900px, 94vw); }
 .workflow-section > h4 { margin: 0; font-size: 1.05rem; }
 .domain-dialog .workflow-section fieldset { border-color: #cad3c6; }
 .workflow-status { display: inline-block; padding: .1rem .45rem; border-radius: .35rem; background: #e2ebdf; color: #274833; font-size: .85rem; }
+.workflow-status-posted { background: #e7e9ec; color: #313f52; }
 .workflow-status-pending { background: #fff0cb; color: #664714; }
 .domain-holding { background: #f7f8f2; border: 1px solid var(--border); border-radius: 8px; padding: .8rem; }
 .domain-holding .domain-holding { background: var(--paper); }
@@ -216,6 +217,11 @@ dialog:has(.migration-grid) { width: min(900px, 94vw); }
 .guide-dialog { width: min(720px, 94vw); }
 .guide-dialog section { margin-top: 1.25rem; }
 .guide-dialog h3 { font-size: 1.15rem; }
+.guide-contents { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); gap: .75rem; }
+.guide-contents section { padding: .7rem; border: 1px solid var(--border); border-radius: 8px; background: #f7f8f2; }
+.guide-contents h4 { margin: 0; }
+.guide-contents ul { padding: 0; list-style: none; }
+.guide-contents button { text-align: left; }
 .guide-dialog ol { padding-inline-start: 1.6rem; }
 .guide-dialog li + li { margin-top: .5rem; }
 @media (max-width: 420px) { .masthead { flex-wrap: wrap; } }

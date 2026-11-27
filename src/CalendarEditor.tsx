@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { dateParts, moonColor, moonPhase, phaseNames, yearLabel, type Calendar } from './calendar'
+import { dateLabel, dateParts, moonColor, moonPhase, phaseNames, yearLabel, type Calendar } from './calendar'
 import { useChangedDraft, useDialogLeave } from './Dialog'
 import { migrate } from './migration'
 import { DateField } from './DateField'
@@ -42,12 +42,12 @@ function settingsChanges(previous: Campaign, next: Campaign) {
     }
   }
   const moonSettings = (data: Campaign) => data.calendar.moons.map((moon, index) =>
-    `${moon.name} (${moon.cycle}-day cycle, ${phaseNames[moonPhase(moon, data.current)]} on campaign date, anchor ${moon.anchor}, ${phaseNames[moon.phase]} at anchor, ${moonColor(moon, index)})`).join(', ')
+    `${moon.name} (${moon.cycle}-day cycle, ${phaseNames[moonPhase(moon, data.current)]} on campaign date, anchor ${dateLabel(data.calendar, moon.anchor)}, ${phaseNames[moon.phase]} at anchor, ${moonColor(moon, index)})`).join(', ')
   add('Moon settings and current phases', moonSettings(previous), moonSettings(next))
   return changes
 }
 
-export function CalendarEditor({ campaign, save, backup, close }: { campaign: Campaign; save: (campaign: Campaign) => void; backup: () => void; close: () => void }) {
+export function CalendarEditor({ campaign, save, backup, close, help }: { campaign: Campaign; save: (campaign: Campaign) => void; backup: () => void; close: () => void; help: () => void }) {
   const [original] = useState(campaign)
   const [name, setName] = useState(campaign.name)
   const [draft, setDraft] = useState<Calendar>(campaign.calendar)
@@ -69,6 +69,7 @@ export function CalendarEditor({ campaign, save, backup, close }: { campaign: Ca
     const changes = settingsChanges(original, next)
     return <div className="form">
       {stale && <p className="warning" role="alert">Campaign data changed. Reopen Calendar settings before saving.</p>}
+      <button type="button" onClick={help}>Help with calendar changes</button>
       {migration ? <p className="warning"><strong>Calendar migration.</strong> Changing the calendar can shift weekdays, recurring dates, and moon phases.</p>
         : <p><strong>Existing dates stay in place.</strong></p>}
       {changes.length > 0 && <ul className="migration-list">{changes.map((line, i) => <li key={i}>{line}</li>)}</ul>}
@@ -90,6 +91,7 @@ export function CalendarEditor({ campaign, save, backup, close }: { campaign: Ca
     setPreview({ next: { ...(migration?.campaign ?? { ...original, calendar: next }), name: name.trim() }, migration })
   }}>
     {stale && <p className="warning" role="alert">Campaign data changed. Reopen Calendar settings before saving.</p>}
+    <button type="button" onClick={help}>Help with Calendar settings</button>
     <label>Campaign name<input required maxLength={120} value={name} onChange={e => setName(e.target.value)}/></label>
     <label>Weekdays, separated by commas<input required value={weekdays} onChange={e => setWeekdays(e.target.value)}/></label>
     <div className="form-row"><label>Before-era label<input value={draft.before} onChange={e => setDraft({ ...draft, before: e.target.value })}/></label><label>After-era label<input value={draft.after} onChange={e => setDraft({ ...draft, after: e.target.value })}/></label></div>
