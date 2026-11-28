@@ -13,6 +13,8 @@ The Shadowdark edition is a separate project. [Campaign Calendar for Shadowdark]
 
 ## Get started
 
+On a first visit, **Example Campaign** opens on the day Rivergate Bridge reopens. Explore the earlier months to see a fiscal year of events and domain turns for four rulers in the Alder Vale. Returning visits open the last active campaign.
+
 Choose **Campaign → New campaign** to pick a template. Use **Calendar settings** to name the campaign and customize its months, festivals, weekdays, eras, and moons. Use **Domain → Domain Play** to create a holding when the campaign is ready for domain turns. **Help** opens the in-app User Guide, and workflow screens link to the relevant walkthroughs.
 
 The Dragonlance template uses the three moon cycle lengths from *Tales of the Lance*. The starting phases are illustrative. Set a known phase and anchor date for each moon to match your own campaign. [*Tales of the Lance*](https://tuscriaturasarchivos.home.blog/wp-content/uploads/2018/12/Tales-of-the-Lance.pdf)
