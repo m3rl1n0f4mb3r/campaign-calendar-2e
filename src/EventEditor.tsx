@@ -1,10 +1,10 @@
 import { useState } from 'react'
 import { dateParts, mod, type Calendar } from './calendar'
-import { dayOf, minutes, type EventData, type Occurrence, type Rule } from './events'
+import { dayOf, eventDraftData, minutes, type EventData, type EventScope, type Occurrence, type Rule } from './events'
 import { useChangedDraft, useDialogLeave } from './Dialog'
 import { DateField } from './DateField'
 
-export type Scope = 'one' | 'future' | 'all'
+export type Scope = EventScope
 const clock = (value: number) => `${String(Math.floor(mod(value, minutes) / 60)).padStart(2, '0')}:${String(mod(value, 60)).padStart(2, '0')}`
 const timeOf = (value: string) => Number(value.slice(0, 2)) * 60 + Number(value.slice(3))
 
@@ -12,10 +12,11 @@ export function EventEditor({ calendar, day, event, save, close, help }: {
   calendar: Calendar; day: number; event?: Occurrence; save: (scope: Scope, data?: EventData, rule?: Rule) => void; close: () => void; help: () => void
 }) {
   const [scope, setScope] = useState<Scope>(event?.series.rule ? 'one' : 'all')
-  const [data, setData] = useState<EventData>(event ?? { title: '', notes: '', location: '', color: '#52745e', start: day * minutes, end: (day + 1) * minutes, allDay: true })
+  const baseline = eventDraftData(day, event, scope)
+  const [data, setData] = useState(baseline)
   const [rule, setRule] = useState<Rule | undefined>(event?.series.rule)
   const leave = useDialogLeave()
-  useChangedDraft([data, rule], [event ? scope === 'all' ? event.series : event : { title: '', notes: '', location: '', color: '#52745e', start: day * minutes, end: (day + 1) * minutes, allDay: true }, event?.series.rule])
+  useChangedDraft([data, rule], [baseline, event?.series.rule])
   const [error, setError] = useState('')
   const startDay = dayOf(data.start)
   const endDay = dayOf(data.end - (data.allDay ? minutes : 0))
@@ -31,7 +32,7 @@ export function EventEditor({ calendar, day, event, save, close, help }: {
     {event?.series.rule && <label>Apply changes to<select value={scope} onChange={change => {
       const value = change.target.value as Scope
       setScope(value)
-      setData(value === 'all' ? event.series : event)
+      setData(eventDraftData(day, event, value))
       setRule(event.series.rule)
     }}><option value="one">This occurrence</option><option value="future">This and following</option><option value="all">Entire series</option></select></label>}
     <label>Title<input autoFocus required maxLength={120} value={data.title} onChange={e => setData({ ...data, title: e.target.value })}/></label>

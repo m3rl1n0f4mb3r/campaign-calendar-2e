@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { dateIndex, dateParts, moonColor, moonPhase, phaseNames, template, weekday, yearLabel, yearLength } from './calendar'
-import { changeSeries, minutes, occurrences, type Series } from './events'
+import { changeSeries, eventDraftData, minutes, occurrences, type Series } from './events'
 import { migrate } from './migration'
 import { dragonlance, greyhawk } from './presets'
 import { deleteActiveCampaign, exportCampaign, newCampaign, parseCampaignBackup, parseStore, restoreActiveCampaign, saveStore, type Store } from './storage'
@@ -8,6 +8,29 @@ import { deleteActiveCampaign, exportCampaign, newCampaign, parseCampaignBackup,
 const event = (day: number, changes: Partial<Series> = {}): Series => ({
   title: 'Trade caravan', location: 'East gate', notes: 'Escorted', color: '#52745e',
   id: 'event', start: day * minutes, end: (day + 1) * minutes, allDay: true, exceptions: {}, ...changes,
+})
+
+describe('event editor drafts', () => {
+  it.each([true, false])('uses only editable values for an existing event with allDay=%s', allDay => {
+    const start = allDay ? 0 : 12 * 60
+    const stored = event(0, { allDay, start, end: allDay ? minutes : start + 90 })
+    const occurrence = occurrences(template(), [stored], 0, 1)[0]
+    expect(eventDraftData(0, occurrence, 'all')).toEqual({
+      title: stored.title, notes: stored.notes, location: stored.location, color: stored.color,
+      start: stored.start, end: stored.end, allDay,
+    })
+  })
+
+  it('bases occurrence and series edits on their respective displayed values', () => {
+    const series = event(0, { rule: { frequency: 'daily', interval: 1, weekdays: [], festival: 'previous' },
+      exceptions: { [minutes]: { title: 'Rescheduled', start: minutes + 600, end: minutes + 660,
+        allDay: false, notes: '', location: '', color: '#52745e' } },
+    })
+    const occurrence = occurrences(template(), [series], 1, 2)[0]
+    expect(eventDraftData(1, occurrence, 'one')).toMatchObject({ title: 'Rescheduled', start: minutes + 600 })
+    expect(eventDraftData(1, occurrence, 'future')).toEqual(eventDraftData(1, occurrence, 'one'))
+    expect(eventDraftData(1, occurrence, 'all')).toMatchObject({ title: series.title, start: series.start })
+  })
 })
 
 describe('campaign dates', () => {
