@@ -3,9 +3,17 @@ import { dateIndex, dateParts, mod, movePeriod, weekday, yearLength, type Calend
 export type EventData = { title: string; location: string; notes: string; color: string; start: number; end: number; allDay: boolean }
 export type Rule = { frequency: 'daily' | 'weekly' | 'monthly' | 'yearly'; interval: number; weekdays: number[]; count?: number; until?: number; festival: 'previous' | 'next' | 'festival' }
 export type Series = EventData & { id: string; rule?: Rule; exceptions: Record<string, EventData | null>; cutoff?: number }
+export type EventScope = 'one' | 'future' | 'all'
 export type Occurrence = EventData & { series: Series; original: number; ordinal: number }
 export const minutes = 1440
 export const dayOf = (time: number) => Math.floor(time / minutes)
+
+export function eventDraftData(day: number, occurrence?: Occurrence, scope: EventScope = 'one'): EventData {
+  if (!occurrence) return { title: '', notes: '', location: '', color: '#52745e', start: day * minutes, end: (day + 1) * minutes, allDay: true }
+  const { title, notes, location, color, start, end, allDay } =
+    scope === 'all' && occurrence.series.rule ? occurrence.series : occurrence
+  return { title, notes, location, color, start, end, allDay }
+}
 
 function* starts(cal: Calendar, series: Series, stop: number, earliest: number) {
   const { rule, start } = series
@@ -96,7 +104,7 @@ export function occurrences(cal: Calendar, events: Series[], from: number, to: n
   return found.sort((a, b) => a.start - b.start || a.title.localeCompare(b.title))
 }
 
-export function changeSeries(events: Series[], occurrence: Occurrence, scope: 'one' | 'future' | 'all', data?: EventData, rule?: Rule): Series[] {
+export function changeSeries(events: Series[], occurrence: Occurrence, scope: EventScope, data?: EventData, rule?: Rule): Series[] {
   const { original, ordinal } = occurrence
   const series = events.find(event => event.id === occurrence.series.id)
   if (!series) return events
