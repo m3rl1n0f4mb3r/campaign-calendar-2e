@@ -19,6 +19,7 @@ import { militaryEntries } from './military'
 import { PrintCalendar } from './PrintCalendar'
 import type { PrintEntry } from './printing'
 import { ConfirmButton, Dialog } from './Dialog'
+import { initializeCampaigns } from './startup'
 import './style.css'
 
 const EngagementPanel = lazy(() => import('./EngagementPanel'))
@@ -27,20 +28,7 @@ type View = 'Month' | 'Week' | 'Day' | 'Agenda'
 type Panel = 'new' | 'calendar' | 'event' | 'jump' | 'clock' | 'data' | 'delete' | 'search' | 'domains' | 'estimates' | 'print' | 'engagements'
 const views: View[] = ['Month', 'Week', 'Day', 'Agenda']
 
-function initialize() {
-  const campaign = newCampaign('Example Campaign')
-  const fallback: Store = { version: 1, active: campaign.id, campaigns: [campaign] }
-  let saved: string | null = null
-  try {
-    saved = localStorage.getItem(key)
-    return { store: saved ? parseStore(saved) : fallback, error: '', locked: false, raw: saved }
-  } catch {
-    return { store: fallback, error: 'Saved data could not be read. Restore a backup, or use Campaign → Backups and data to start fresh.', locked: true, raw: saved }
-  }
-}
-
-function App() {
-  const [initial] = useState(initialize)
+function App({ initial }: { initial: Awaited<ReturnType<typeof initializeCampaigns>> }) {
   const [guide, setGuide] = useState<GuideTopic>()
   const helpOpener = useRef<HTMLElement | null>(null)
   function openGuide(topic: GuideTopic) {
@@ -501,4 +489,7 @@ if (import.meta.env.VITE_VERCEL_ENV === 'production') {
   } })
 }
 
-createRoot(document.getElementById('root')!).render(<App/>)
+const root = createRoot(document.getElementById('root')!)
+void initializeCampaigns({ getItem: key => window.localStorage.getItem(key) },
+  async () => (await import('./exampleCampaign')).exampleCampaign(),
+).then(initial => root.render(<App initial={initial}/>))
